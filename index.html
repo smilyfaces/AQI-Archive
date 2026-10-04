@@ -1,0 +1,43 @@
+<html>
+    <head>
+        <script type="importmap">
+        {
+            "imports": {
+            "react": "https://esm.sh/react@latest?dev",
+            "react-dom/client": "https://esm.sh/react-dom@latest/client?dev",
+            "react/jsx-runtime": "https://esm.sh/react@latest/jsx-runtime?dev"
+            }
+        }
+        </script>
+        <script src="https://unpkg.com/@babel/standalone@latest/babel.min.js"></script>
+    </head>
+    <body>
+        <div id ="app"></div>
+        <script type = "text/babel" data-type="module" data-presents="react">
+            import React from 'react';
+            import { createRoot} from 'react-dom/client';
+
+            const domNode = document.getElementById("app");
+
+            function Header({ title }) {
+                return <h1>{title}</h1>;
+            }
+
+            function HomePage() {
+                const names = ['Ada Lovelace', 'Grace Hopper', 'Margaret Hamilton'];
+ 
+                return (
+                    <div>
+                        <Header title = "React"/>
+                        <ul>
+                            {names.map( (name) => (<li key = {name}>{name}</li>) )}
+                        </ul>
+                    </div>
+                );
+            }
+
+            const root = createRoot(domNode);
+            root.render(<HomePage />);
+        </script>
+    </body>
+</html>
