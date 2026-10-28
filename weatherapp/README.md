@@ -68,14 +68,14 @@ The seed requires `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. It
 
 ### Ingestion schedule and deploy
 
-In Supabase Dashboard → Database → Extensions, enable `pg_cron`, `pg_net`, and Vault (`supabase_vault`). Set Edge Function secrets:
+In Supabase Dashboard → Database → Extensions, enable `pg_cron`, `pg_net`, and Vault (`supabase_vault`). Set the Edge Function's custom secrets (Supabase reserves the `SUPABASE_` prefix and injects `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` into hosted functions):
 
 ```sh
-npx supabase secrets set SUPABASE_SERVICE_ROLE_KEY=... AIRNOW_API_KEY=... OPENAQ_API_KEY=... NWS_USER_AGENT='AQITracker (you@example.com)' INGEST_SECRET=...
+npx supabase secrets set AIRNOW_API_KEY=... OPENAQ_API_KEY=... NWS_USER_AGENT='AQITracker (you@example.com)' INGEST_SECRET=...
 npx supabase functions deploy ingest
 ```
 
-`SUPABASE_URL` is provided to hosted Supabase functions. The cron migration calls the deployed function at minute 35 of each hour. Before applying `0002_hourly_cron.sql`, create Vault secrets named `project_url` (your project URL) and `ingest_secret` (the same value configured for the function). Apply it with `npx supabase db push` after the function is deployed. Monitor run records in `ingest_runs` and cron history in the Dashboard.
+Before applying `0002_hourly_cron.sql`, add two secrets in Supabase Dashboard → **Vault** (or via `vault.create_secret`): `project_url` with `https://YOUR_PROJECT_REF.supabase.co`, and `ingest_secret` with the exact same value you set for the Edge Function. Apply migrations with `npx supabase db push`, then run `npm run seed`. The cron migration calls the deployed function at minute 35 of each hour. Monitor run records in `ingest_runs` and cron history in the Dashboard. The `SUPABASE_SERVICE_ROLE_KEY` is only needed by the local seed script; keep it in `weatherapp/.env.local` and never set it in Vercel.
 
 To trigger ingestion manually:
 
@@ -96,6 +96,10 @@ npm run typecheck
 npm test
 npm run build
 ```
+
+### Deploy the website to Vercel
+
+Push the project branch to GitHub and import the repository in Vercel. Set the Vercel **Root Directory** to `weatherapp` because the Next.js app is nested in the repository. Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` to the Vercel Production and Preview environments, then deploy. These are the only Supabase environment values the website needs; service-role and data-provider keys stay in local seed/Edge Function environments. Supabase runs the ingestion function and hourly cron independently of Vercel.
 
 ### Data source and interpretation notes
 
