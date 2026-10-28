@@ -101,4 +101,3 @@ where c.is_active
 order by r.city_id, r.recorded_at desc;
 
 grant select on public.latest_readings to anon, authenticated;
-
