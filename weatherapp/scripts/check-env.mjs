@@ -3,7 +3,7 @@ import nextEnv from "@next/env";
 nextEnv.loadEnvConfig(process.cwd());
 const required = [
   "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY",
-  "AIRNOW_API_KEY", "OPENAQ_API_KEY", "NWS_USER_AGENT", "INGEST_SECRET",
+  "AIRNOW_API_KEY", "OPENAQ_API_KEY", "NWS_USER_AGENT", "INGEST_SECRET", "PASSWORD",
 ];
 const missing = required.filter(key => !process.env[key]?.trim());
 if (missing.length) {

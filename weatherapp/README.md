@@ -64,7 +64,7 @@ npx supabase db push
 npm run seed
 ```
 
-The seed requires `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. It upserts the 61 tracked cities and exactly 69 manual readings; repeating it is safe. Manual timestamps are interpreted in `America/New_York` as specified in `FUNCTIONALITY.md`.
+The seed requires `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. It upserts the 60 tracked cities and exactly 69 manual readings; repeating it is safe. Manual timestamps are interpreted in `America/New_York` as specified in `FUNCTIONALITY.md`.
 
 ### Ingestion schedule and deploy
 
@@ -83,7 +83,9 @@ To trigger ingestion manually:
 curl -X POST 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/ingest' -H 'Authorization: Bearer YOUR_INGEST_SECRET' -H 'Content-Type: application/json' -d '{}'
 ```
 
-The function stores the previous completed UTC hour, retries transient source failures, and upserts by `(city_id, recorded_at)`. It records partial success when only NWS or AQI data are available. Current NWS nearby stations are resolved dynamically through `/points`; readings keep the actual station identifier. AirNow hourly monitoring-site observations are used for AQI and concentrations, with OpenAQ v3 as a concentration fallback. Missing values remain SQL `NULL`.
+The function stores the previous completed UTC hour, retries transient source failures, and upserts by `(city_id, recorded_at)`. It records partial success when only NWS or AQI data are available. Current NWS nearby stations are resolved dynamically through `/points`; readings keep the actual station identifier. AirNow hourly monitoring-site observations are used for AQI and concentrations. For each pollutant, the function searches within 25 km, then 50 km, then 100 km, and averages the available readings from the first radius with data. OpenAQ v3 is a concentration fallback within its 25 km API limit; requests are serialized and prioritize one missing concentration per city to reduce rate-limit errors. If OpenAQ returns HTTP 429 after retries, the function pauses its OpenAQ fallback for the rest of that invocation. Missing values remain SQL `NULL`.
+
+The shared header has a password-protected **Record now** action on Home, city detail, and Saved pages. Home records every active city; a city page records that city; Saved records the cities saved in that browser. It records the latest completed UTC hour. Set `PASSWORD` and `INGEST_SECRET` as server-only environment variables in Vercel (and `PASSWORD` in local `.env.local` for local use). `INGEST_SECRET` must match the Supabase Edge Function secret; keep both values out of `NEXT_PUBLIC_*` variables.
 
 ### Development and verification
 
@@ -99,7 +101,7 @@ npm run build
 
 ### Deploy the website to Vercel
 
-Push the project branch to GitHub and import the repository in Vercel. Set the Vercel **Root Directory** to `weatherapp` because the Next.js app is nested in the repository. Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` to the Vercel Production and Preview environments, then deploy. These are the only Supabase environment values the website needs; service-role and data-provider keys stay in local seed/Edge Function environments. Supabase runs the ingestion function and hourly cron independently of Vercel.
+Push the project branch to GitHub and import the repository in Vercel. Set the Vercel **Root Directory** to `weatherapp` because the Next.js app is nested in the repository. Add `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `PASSWORD`, and `INGEST_SECRET` to the Vercel Production and Preview environments, then deploy. Keep `PASSWORD` and `INGEST_SECRET` server-only (never prefix them with `NEXT_PUBLIC_`). Service-role and data-provider keys stay in the Supabase Edge Function or local seed environments. Supabase runs the ingestion function and hourly cron independently of Vercel.
 
 ### Data source and interpretation notes
 
