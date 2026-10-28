@@ -1,0 +1,2 @@
+[functions.ingest]
+verify_jwt = false

@@ -62,8 +62,7 @@ create table if not exists public.readings (
   aqi_source_site text,
   raw jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
-  unique (city_id, recorded_at),
-  check (aqi is not null or pm25 is not null or pm10 is not null or ozone is not null or no2 is not null or so2 is not null or co is not null or temperature_c is not null or text_description is not null)
+  unique (city_id, recorded_at)
 );
 
 create index if not exists readings_city_recorded_idx on public.readings (city_id, recorded_at desc);
