@@ -89,6 +89,7 @@ The function stores the previous completed UTC hour, retries transient source fa
 ```sh
 npm install
 npm run dev
+npm run env:check
 npm run lint
 npm run typecheck
 npm test

@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "seed": "tsx scripts/seed.ts",
+    "env:check": "node scripts/check-env.mjs",
     "test": "vitest run"
   },
   "dependencies": {
