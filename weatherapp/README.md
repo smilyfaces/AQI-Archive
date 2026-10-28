@@ -63,7 +63,7 @@ supabase db push
 npm run seed
 ```
 
-The seed requires `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. It upserts the 60 tracked cities and exactly 69 manual readings; repeating it is safe. Manual timestamps are interpreted in `America/New_York` as specified in `FUNCTIONALITY.md`.
+The seed requires `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. It upserts the 61 tracked cities and exactly 69 manual readings; repeating it is safe. Manual timestamps are interpreted in `America/New_York` as specified in `FUNCTIONALITY.md`.
 
 ### Ingestion schedule and deploy
 

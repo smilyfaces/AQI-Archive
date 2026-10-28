@@ -1,5 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 import { fromZonedTime } from "date-fns-tz";
+import { loadEnvConfig } from "@next/env";
+
+loadEnvConfig(process.cwd());
 
 const cityRows = [
   ["columbia-sc","Columbia","SC",34.0007,-81.0348,"America/New_York","KCAE","Columbia",[34.0007,-81.0348]],
