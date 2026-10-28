@@ -23,7 +23,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${figtree.variable} ${outfit.variable}`}>
+    <html lang="en" className={`${figtree.variable} ${outfit.variable}`} data-scroll-behavior="smooth">
       <body>
         <SavedCitiesProvider>
           <a className="skip-link" href="#main-content">Skip to main content</a>

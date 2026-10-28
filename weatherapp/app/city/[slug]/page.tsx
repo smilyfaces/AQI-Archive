@@ -45,7 +45,7 @@ export default async function CityPage({params}:{params:Promise<{slug:string}>})
           <Condition icon={<CloudRain size={18}/>} label="Precipitation" value={latest?.precipitation_last_hour_mm===null||latest?.precipitation_last_hour_mm===undefined?"N/A":`${latest.precipitation_last_hour_mm} mm · ${latest.precipitation_type??"N/A"}`}/>
           <Condition icon={<Wind size={18}/>} label="Wind" value={latest?.wind_speed_ms===null||latest?.wind_speed_ms===undefined?"N/A":`${(latest.wind_speed_ms*2.23694).toFixed(1)} mph`}/>
         </div><div className="city-source-row"><span><Gauge size={15}/> Data source</span><p>{city.data_source_note??(latest?.weather_station_id?`NWS station ${latest.weather_station_id}`:"Nearby reporting and weather stations")}{latest?.aqi_source_site?` · AQI: ${latest.aqi_source_site}`:""}</p></div></div>
-        <div className="hero-last-updated">{latest?.recorded_at?<>Last reading <time dateTime={latest.recorded_at}>{new Intl.DateTimeFormat("en-US",{timeZone:timezone,dateStyle:"medium",timeStyle:"short",timeZoneName:"short"}).format(new Date(latest.recorded_at))}</time>{city.stale&&<span className="stale-tag">Stale</span>}</>:"No readings yet"}</div>
+        <div className="hero-last-updated">{latest?.recorded_at?<>Last reading <time dateTime={latest.recorded_at}>{new Intl.DateTimeFormat("en-US",{timeZone:timezone,year:"numeric",month:"short",day:"numeric",hour:"numeric",minute:"2-digit",timeZoneName:"short"}).format(new Date(latest.recorded_at))}</time>{city.stale&&<span className="stale-tag">Stale</span>}</>:"No readings yet"}</div>
       </section>
       <CityInsights readings={readings} timezone={timezone} now={asOf}/>
     </div>
