@@ -99,3 +99,12 @@ npm run build
 ### Data source and interpretation notes
 
 NWS keeps recent observations for seven days, and AirNow identifies its web-service data as preliminary. The manual seed is historical user-provided data and is never weather-backfilled. Automated records use hourly station data; coverage depends on the nearby sources. A missing API value is `NULL` and displays as `N/A`.
+
+### Routes
+
+- `/` shows worst, best, and all tracked cities. Saved state is shared across tabs through the `savedCities` local-storage key.
+- `/city/[slug]` shows current conditions, archive access, and statistics. Correlations and significance tests are suppressed for small samples.
+- `/city/[slug]/archive` supports date, local-time, primary-pollutant, and primary-concentration filters. Filters are shareable in the URL; the PDF endpoint exports matching rows across pages and caps exports at 20,000 rows.
+- `/saved` lets you remove or compare saved cities side by side. Saved cities are device-local and do not require an account.
+
+The initial archive view groups rows under their local calendar day. Saved comparisons support a shared time range, a selectable numeric metric, sample sizes, means, medians, standard deviations, overlaid readings, and rankings. Each saved city can also expand into its own analysis.

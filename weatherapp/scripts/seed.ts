@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { fromZonedTime } from "date-fns-tz";
+import { manualEntryTimes, manualEntryTimezone, manualSeedValues } from "../lib/manual-data";
 import { loadEnvConfig } from "@next/env";
 
 loadEnvConfig(process.cwd());
@@ -67,10 +68,6 @@ const cityRows = [
   ["charleston-sc","Charleston","SC",32.7765,-79.9311,"America/New_York","KCHS","Charleston",[32.7765,-79.9311]],
 ] as const;
 
-const localTimes = ["2026-08-18 22:00","2026-08-27 21:25","2026-08-29 21:52","2026-09-03 10:16","2026-09-04 22:25","2026-09-05 21:15","2026-09-10 23:33","2026-09-11 15:48","2026-09-14 20:17","2026-09-16 14:57","2026-09-19 16:32","2026-09-21 14:39","2026-09-24 13:24","2026-09-27 15:37","2026-09-29 12:10","2026-10-04 15:13","2026-10-06 10:07","2026-10-08 15:35","2026-10-13 10:33","2026-10-14 11:22","2026-10-16 22:21","2026-10-20 10:07","2026-10-22 09:57"];
-const columbia: [string, number | null, number][] = [["PM2.5",null,53],["PM2.5",null,54],["PM2.5",null,55],["PM2.5",null,56],["PM2.5",null,32],["PM2.5",null,42],["PM2.5",4.2,23],["PM2.5",3.5,19],["Ozone",122,75],["PM2.5",9.1,52],["PM2.5",11.2,55],["PM2.5",11.2,55],["PM2.5",2.9,16],["Ozone",86,40],["PM2.5",6.6,37],["PM2.5",10.6,54],["PM2.5",6.4,35],["PM2.5",8.3,46],["PM2.5",7.2,39],["PM2.5",17,66],["PM2.5",21.3,74],["PM2.5",4.3,23],["PM2.5",6.6,36]];
-const oakland: [string, number | null, number][] = [["PM2.5",null,25],["PM2.5",null,20],["PM2.5",null,34],["Ozone",null,21],["Ozone",null,32],["Ozone",null,32],["PM2.5",7.7,42],["PM2.5",6,33],["PM2.5",5.1,28],["Ozone",60,28],["PM2.5",6.3,35],["Ozone",48,35],["PM2.5",8.9,49],["Ozone",56,26],["PM2.5",4.3,24],["PM2.5",8.5,47],["PM2.5",6.3,34],["PM2.5",7.6,42],["NO2",37.8,19],["PM2.5",3.6,20],["Ozone",103,48],["Ozone",32,32],["PM2.5",7.3,41]];
-const lamont: [string, number | null, number][] = [["PM2.5",null,56],["PM2.5",null,65],["Ozone",null,93],["PM2.5",null,37],["Ozone",null,54],["Ozone",null,54],["Ozone",68.03,42],["PM2.5",9.01,53],["PM2.5",6.6,37],["PM2.5",10.2,52],["PM2.5",9.63,54],["PM2.5",9.63,54],["PM2.5",12.9,58],["PM2.5",18.98,72],["PM2.5",14.67,64],["PM2.5",5.01,37],["PM2.5",5.36,26],["PM2.5",7.49,50],["PM2.5",5.87,29],["PM2.5",2.7,15],["Ozone",56.76,25],["PM2.5",8.7,46],["PM2.5",10.54,56]];
 const category = (aqi: number) => aqi <= 50 ? "Good" : aqi <= 100 ? "Moderate" : aqi <= 150 ? "Unhealthy for Sensitive Groups" : aqi <= 200 ? "Unhealthy" : aqi <= 300 ? "Very Unhealthy" : "Hazardous";
 
 async function main() {
@@ -89,12 +86,12 @@ async function main() {
   if (cityError) throw cityError;
   if (!insertedCities || insertedCities.length !== cityRows.length) throw new Error("City upsert did not return all cities.");
   const idBySlug = new Map(insertedCities.map(city => [city.slug, city.id]));
-  const seedGroups = [["columbia-sc",columbia],["oakland-ca",oakland],["lamont-ok",lamont]] as const;
+  const seedGroups = Object.entries(manualSeedValues);
   const entries = seedGroups.flatMap(([slug, values]) => values.map(([pollutant, concentration, aqi], i) => {
     const ppm = pollutant === "PM2.5" ? "pm25" : pollutant === "PM10" ? "pm10" : pollutant === "Ozone" ? "ozone" : pollutant === "NO2" ? "no2" : pollutant === "SO2" ? "so2" : "co";
     return {
       city_id: idBySlug.get(slug),
-      recorded_at: fromZonedTime(`${localTimes[i]}:00`, "America/New_York").toISOString(),
+      recorded_at: fromZonedTime(`${manualEntryTimes[i]}:00`, manualEntryTimezone).toISOString(),
       source: "manual",
       aqi, aqi_category: category(aqi), primary_pollutant: pollutant,
       pm25: ppm === "pm25" ? concentration : null,

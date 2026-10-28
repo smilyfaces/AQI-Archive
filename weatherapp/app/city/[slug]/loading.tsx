@@ -1,0 +1,3 @@
+export default function LoadingCity() {
+  return <main id="main-content" className="page-main"><div className="page-container"><div className="city-hero skeleton-hero"><div className="skeleton skeleton-ring"/><div className="skeleton-copy"><div className="skeleton skeleton-line short"/><div className="skeleton skeleton-line large"/><div className="skeleton skeleton-line"/></div></div><div className="insight-grid">{Array.from({length:4},(_,i)=><div className="chart-panel" key={i}><div className="skeleton skeleton-line large"/><div className="skeleton skeleton-chart"/></div>)}</div></div></main>;
+}
