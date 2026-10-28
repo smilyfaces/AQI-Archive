@@ -106,6 +106,24 @@ button { color: inherit; }
 .saved-count { display: inline-grid; min-width: 23px; height: 23px; place-items: center; padding: 0 6px; border-radius: var(--r-pill); background: var(--blue-600); color: white; font-size: .75rem; font-variant-numeric: tabular-nums; }
 .header-cloud { display: none; color: var(--sky-500); }
 .mobile-search-toggle { display: none; }
+.force-record-trigger { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: 7px; min-height: 42px; padding: 0 14px; border: 1px solid var(--border-strong); border-radius: var(--r-pill); background: var(--surface); color: var(--blue-700); font: inherit; font-size: .86rem; font-weight: 700; white-space: nowrap; cursor: pointer; }
+.force-record-trigger:hover { border-color: var(--sky-500); background: var(--surface-2); }
+.force-record-backdrop { position: fixed; z-index: 90; inset: 0; display: grid; place-items: center; padding: 20px; background: rgb(9 23 36 / 55%); backdrop-filter: blur(4px); }
+.force-record-dialog { position: relative; width: min(100%, 430px); padding: 28px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--shadow-3); }
+.force-record-dialog h2 { margin: 0 0 8px; font-size: 1.55rem; }
+.force-record-icon { display: grid; width: 44px; height: 44px; margin-bottom: 17px; place-items: center; border-radius: 14px; background: var(--surface-2); color: var(--blue-700); }
+.force-record-dialog .page-kicker { margin-bottom: 4px; }
+.force-record-description { margin: 0 0 20px; color: var(--ink-muted); }
+.force-record-close { position: absolute; top: 15px; right: 15px; display: grid; width: 38px; height: 38px; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--ink-muted); cursor: pointer; }
+.force-record-close:hover { background: var(--surface-2); color: var(--ink); }
+.force-record-dialog form { display: grid; gap: 8px; }
+.force-record-dialog form label { color: var(--ink-muted); font-size: .86rem; font-weight: 650; }
+.force-record-dialog form input { width: 100%; min-height: 46px; padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); color: var(--ink); }
+.force-record-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 12px; }
+.force-record-actions .button:disabled { opacity: .6; cursor: wait; }
+.force-record-message { margin: 16px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); color: var(--ink); font-size: .88rem; }
+.force-record-spinning { animation: force-record-spin 900ms linear infinite; }
+@keyframes force-record-spin { to { transform: rotate(360deg); } }
 
 .page-main { flex: 1; padding: 40px 32px 72px; }
 .page-container { width: 100%; max-width: 1200px; margin: 0 auto; }
@@ -327,18 +345,21 @@ h1 { max-width: 750px; margin-bottom: 10px; font-size: clamp(2.2rem, 4.4vw, 3.2r
 }
 @media (max-width: 639px) {
   .site-header { width: 100%; border-right: 0; border-left: 0; border-radius: 0 0 16px 16px; }
-  .header-inner { position: relative; min-height: 66px; gap: 8px; padding: 9px 14px; }
+  .header-inner { position: relative; min-height: 66px; gap: 5px; padding: 9px 10px; }
   .brand { gap: 8px; font-size: 1.1rem; }
   .brand-mark { width: 38px; height: 38px; border-radius: 13px; }
   .search-wrap { display: none; }
   .search-wrap.mobile-search-open { position: absolute; z-index: 55; top: calc(100% + 8px); right: 12px; left: 12px; display: flex; max-width: none; box-shadow: var(--shadow-2); }
   .mobile-search-toggle { display: grid; margin-left: auto; }
   .main-nav { gap: 2px; margin-left: 2px; }
-  .nav-link { width: 44px; min-height: 44px; padding: 0; }
+  .nav-link { width: 36px; min-height: 40px; padding: 0; }
   .nav-link span:not(.saved-count) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
   .nav-link.saved-nav { position: relative; }
   .saved-count { position: absolute; top: -2px; right: -3px; min-width: 19px; height: 19px; border: 2px solid var(--surface); font-size: .68rem; }
   .header-cloud { display: none; }
+  .force-record-trigger { width: 36px; min-height: 40px; padding: 0; }
+  .force-record-trigger span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+  .mobile-search-toggle { width: 36px; min-height: 40px; }
   .page-main { padding: 28px 16px 52px; }
   .city-hero { gap: 18px; padding: 17px; border-radius: 22px; }
   .city-hero-main { align-items: flex-start; gap: 14px; }
