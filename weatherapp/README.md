@@ -54,12 +54,13 @@ Do not commit `.env.local` or put server-only keys in client code.
 
 ### Database and seed
 
-Install the Supabase CLI, link this project, then run the SQL migrations and seed:
+Run these commands from the `weatherapp` directory. The Supabase CLI is project-local, so install it once and invoke it with `npx` (Node.js 20 or later is required):
 
 ```sh
-supabase login
-supabase link --project-ref YOUR_PROJECT_REF
-supabase db push
+npm install --save-dev supabase
+npx supabase login
+npx supabase link --project-ref YOUR_PROJECT_REF
+npx supabase db push
 npm run seed
 ```
 
@@ -70,11 +71,11 @@ The seed requires `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. It
 In Supabase Dashboard → Database → Extensions, enable `pg_cron`, `pg_net`, and Vault (`supabase_vault`). Set Edge Function secrets:
 
 ```sh
-supabase secrets set SUPABASE_SERVICE_ROLE_KEY=... AIRNOW_API_KEY=... OPENAQ_API_KEY=... NWS_USER_AGENT='AQITracker (you@example.com)' INGEST_SECRET=...
-supabase functions deploy ingest
+npx supabase secrets set SUPABASE_SERVICE_ROLE_KEY=... AIRNOW_API_KEY=... OPENAQ_API_KEY=... NWS_USER_AGENT='AQITracker (you@example.com)' INGEST_SECRET=...
+npx supabase functions deploy ingest
 ```
 
-`SUPABASE_URL` is provided to hosted Supabase functions. The cron migration calls the deployed function at minute 35 of each hour. Before applying `0002_hourly_cron.sql`, create Vault secrets named `project_url` (your project URL) and `ingest_secret` (the same value configured for the function). Apply it with `supabase db push` after the function is deployed. Monitor run records in `ingest_runs` and cron history in the Dashboard.
+`SUPABASE_URL` is provided to hosted Supabase functions. The cron migration calls the deployed function at minute 35 of each hour. Before applying `0002_hourly_cron.sql`, create Vault secrets named `project_url` (your project URL) and `ingest_secret` (the same value configured for the function). Apply it with `npx supabase db push` after the function is deployed. Monitor run records in `ingest_runs` and cron history in the Dashboard.
 
 To trigger ingestion manually:
 
