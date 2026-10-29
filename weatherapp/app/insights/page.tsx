@@ -12,6 +12,6 @@ export default async function InsightsPage() {
     <Link className="back-link" href="/">← <span>All cities</span></Link>
     <header className="all-insights-heading"><p className="page-kicker">Cross-city analysis</p><h1>Air quality across cities</h1><p>Compare AQI and pollutant concentrations with weather conditions across every city and archived reading. Use the metric relationship, scatter, and group comparison controls to explore combinations.</p></header>
     {localFallback && <div className="notice-panel"><span>Showing the available manual seed readings. Apply migrations and ingest observations to analyze the full city archive.</span></div>}
-    <CityInsights readings={readings} timezone="UTC" now={Date.now()} title="All-city statistics and archive insights" />
+    <CityInsights readings={readings} timezone="UTC" now={Date.now()} title="All-city statistics and archive insights" showSampleControl />
   </div></main>;
 }

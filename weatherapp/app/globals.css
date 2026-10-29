@@ -246,6 +246,9 @@ h1 { max-width: 750px; margin-bottom: 10px; font-size: clamp(2.2rem, 4.4vw, 3.2r
 .segmented-control { display: flex; flex-wrap: wrap; gap: 3px; padding: 4px; border-radius: var(--r-pill); background: var(--surface-2); }
 .segmented-control button { min-height: 38px; padding: 0 13px; border: 0; border-radius: var(--r-pill); background: transparent; color: var(--ink-muted); font-size: .87rem; font-weight: 600; cursor: pointer; }
 .segmented-control button.selected { background: var(--surface); box-shadow: var(--shadow-1); color: var(--ink); }
+.insights-toolbar-controls { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
+.sample-size-control { display: flex; align-items: center; gap: 8px; color: var(--ink-muted); font-size: .84rem; font-weight: 650; white-space: nowrap; }
+.sample-size-control select { min-height: 42px; padding: 8px 30px 8px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--ink); }
 .insight-section, .chart-panel { min-width: 0; padding: 20px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--shadow-1); }
 .insight-heading { margin-bottom: 14px; }
 .insight-heading h3, .chart-heading h3 { margin: 0 0 4px; font-size: 1.25rem; }
@@ -373,8 +376,10 @@ h1 { max-width: 750px; margin-bottom: 10px; font-size: clamp(2.2rem, 4.4vw, 3.2r
   .insights-content { margin-top: 32px; }
   .insights-toolbar { align-items: flex-start; flex-direction: column; gap: 12px; }
   .insights-toolbar h2 { font-size: 1.55rem; }
+  .insights-toolbar-controls { width: 100%; align-items: stretch; flex-direction: column; }
   .segmented-control { width: 100%; justify-content: space-between; }
   .segmented-control button { flex: 1; padding-inline: 5px; font-size: .78rem; }
+  .sample-size-control { justify-content: space-between; }
   .insight-grid { grid-template-columns: minmax(0,1fr); gap: 12px; }
   .span-4, .span-6, .span-8, .span-12 { grid-column: 1; }
   .categorical-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }

@@ -10,14 +10,33 @@ const periodOptions = [{key:"24h",label:"24 hours",duration:24*60*60*1000},{key:
 const fmt = (value:number|null|undefined,digits=2) => value===null||value===undefined||!Number.isFinite(value) ? "N/A" : Number(value.toFixed(digits)).toLocaleString();
 const metricLabel = (key:string) => NUMERIC_METRICS.find(item=>item.key===key)?.label ?? key;
 const getLocalDate=(value:string,timezone:string)=>new Intl.DateTimeFormat("en-US",{timeZone:timezone,month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(new Date(value));
+const sampleSizes = [100, 500, 1000, 5000] as const;
+function randomSample<T>(values: T[], size: number, seed: number): T[] {
+  const shuffled = [...values];
+  let state = seed >>> 0;
+  const nextRandom = () => {
+    state += 0x6D2B79F5;
+    let value = state;
+    value = Math.imul(value ^ value >>> 15, value | 1);
+    value ^= value + Math.imul(value ^ value >>> 7, value | 61);
+    return ((value ^ value >>> 14) >>> 0) / 4294967296;
+  };
+  for (let index = shuffled.length - 1; index > 0; index--) {
+    const other = Math.floor(nextRandom() * (index + 1));
+    [shuffled[index], shuffled[other]] = [shuffled[other], shuffled[index]];
+  }
+  return shuffled.slice(0, Math.min(size, shuffled.length));
+}
 const formatChartDate = (value: unknown) => {
   if (value === null || value === undefined || value === "") return "";
   const timestamp = typeof value === "number" ? value : Number(value);
   return Number.isFinite(timestamp) ? format(new Date(timestamp), "MMM d") : "";
 };
 
-export function CityInsights({ readings, timezone, now, title = "Statistics and archive insights" }: { readings: Reading[]; timezone: string; now: number; title?: string }) {
+export function CityInsights({ readings, timezone, now, title = "Statistics and archive insights", showSampleControl = false }: { readings: Reading[]; timezone: string; now: number; title?: string; showSampleControl?: boolean }) {
   const [period,setPeriod]=useState<(typeof periodOptions)[number]["key"]>("all");
+  const [sampleSize,setSampleSize]=useState<"all"|`${number}`>("all");
+  const [sampleSeed,setSampleSeed]=useState(0);
   const [metric,setMetric]=useState<MetricKey>("aqi");
   const [distributionMetric,setDistributionMetric]=useState<MetricKey>("aqi");
   const [xMetric,setXMetric]=useState<MetricKey>("temperature_c");
@@ -26,7 +45,8 @@ export function CityInsights({ readings, timezone, now, title = "Statistics and 
   const [correlationMethod,setCorrelationMethod]=useState<"pearson"|"spearman">("pearson");
   const [tableView,setTableView]=useState<Record<string,boolean>>({});
   const selectedPeriod=periodOptions.find(item=>item.key===period)??periodOptions[3];
-  const visible=useMemo(()=>readings.filter(row=>{const age=now-Date.parse(row.recorded_at);return age>=0&&age<=selectedPeriod.duration;}).sort((a,b)=>Date.parse(a.recorded_at)-Date.parse(b.recorded_at)),[readings,now,selectedPeriod]);
+  const periodReadings=useMemo(()=>readings.filter(row=>{const age=now-Date.parse(row.recorded_at);return age>=0&&age<=selectedPeriod.duration;}).sort((a,b)=>Date.parse(a.recorded_at)-Date.parse(b.recorded_at)),[readings,now,selectedPeriod]);
+  const visible=useMemo(()=>sampleSize==="all"?periodReadings:randomSample(periodReadings,Number(sampleSize),sampleSeed).sort((a,b)=>Date.parse(a.recorded_at)-Date.parse(b.recorded_at)),[periodReadings,sampleSize,sampleSeed]);
   const summary=useMemo(()=>NUMERIC_METRICS.map(item=>({ ...item,summary:summarize(visible.map(row=>metricValue(row,item.key))) })),[visible]);
   const selectedValues=visible.map(row=>metricValue(row,metric));
   const selectedSummary=summarize(selectedValues);
@@ -69,7 +89,7 @@ export function CityInsights({ readings, timezone, now, title = "Statistics and 
   const regression=pearson.r===null||pearson.slope===null||pearson.intercept===null?[]:[{x:Math.min(...scatterRows.map(row=>row.x)),y:pearson.slope*Math.min(...scatterRows.map(row=>row.x))+pearson.intercept},{x:Math.max(...scatterRows.map(row=>row.x)),y:pearson.slope*Math.max(...scatterRows.map(row=>row.x))+pearson.intercept}];
 
   return <div className="insights-content">
-    <div className="insights-toolbar"><div><h2>{title}</h2><p>{visible.length} records in {selectedPeriod.label.toLowerCase()} · dates shown in {timezone}</p></div><div className="segmented-control" role="group" aria-label="Statistics time range">{periodOptions.map(option=><button key={option.key} className={period===option.key?"selected":""} aria-pressed={period===option.key} onClick={()=>setPeriod(option.key)}>{option.label}</button>)}</div></div>
+    <div className="insights-toolbar"><div><h2>{title}</h2><p>{showSampleControl&&sampleSize!=="all"?`Random sample of ${visible.length} from ${periodReadings.length} records`:`${visible.length} records`} in {selectedPeriod.label.toLowerCase()} · dates shown in {timezone}</p></div><div className="insights-toolbar-controls"><div className="segmented-control" role="group" aria-label="Statistics time range">{periodOptions.map(option=><button key={option.key} className={period===option.key?"selected":""} aria-pressed={period===option.key} onClick={()=>setPeriod(option.key)}>{option.label}</button>)}</div>{showSampleControl&&<label className="sample-size-control"><span>Sample size</span><select value={sampleSize} onChange={event=>{const value=event.target.value as typeof sampleSize;setSampleSize(value);setSampleSeed(Math.floor(Math.random()*4294967296));}}><option value="all">All readings</option>{sampleSizes.map(size=><option key={size} value={String(size)}>{size.toLocaleString()} readings</option>)}</select></label>}</div></div>
 
     <section className="insight-section" aria-labelledby="summary-heading"><div className="insight-heading"><h3 id="summary-heading">Summary statistics</h3><p>Each row uses only values recorded for that metric; missing values are excluded.</p></div>
       <div className="table-scroll"><table className="stats-table"><thead><tr><th scope="col">Metric</th><th scope="col">n</th><th scope="col">Mean</th><th scope="col">Median</th><th scope="col">Min</th><th scope="col">Max</th><th scope="col">SD</th><th scope="col">Variance</th><th scope="col">IQR</th><th scope="col">5th pct.</th><th scope="col">95th pct.</th><th scope="col">Mode</th></tr></thead><tbody>{summary.map(item=><tr key={item.key}><th scope="row">{item.label}{item.unit&&<small> {item.unit}</small>}</th><td>{item.summary.n}</td><td>{fmt(item.summary.mean)}</td><td>{fmt(item.summary.median)}</td><td>{fmt(item.summary.min)}</td><td>{fmt(item.summary.max)}</td><td>{fmt(item.summary.sd)}</td><td>{fmt(item.summary.variance)}</td><td>{fmt(item.summary.iqr)}</td><td>{fmt(item.summary.p05)}</td><td>{fmt(item.summary.p95)}</td><td>{fmt(item.summary.mode)}</td></tr>)}</tbody></table></div>
