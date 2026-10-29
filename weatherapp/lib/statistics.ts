@@ -7,7 +7,7 @@ export type AnalysisScope =
   | { kind: "city"; cityId: string }
   | { kind: "cities"; cityIds: string[] };
 export type ResultMeta = { n: number; method: string; warnings: string[]; scope: AnalysisScope; required?: number };
-export type InferentialResult<T extends object> = ResultMeta & ({ status: "ok"; value: T } | { status: "insufficient"; required: number; value: null });
+export type InferentialResult<T extends object> = ResultMeta & ({ status: "ok"; value: T } | { status: "insufficient"|"suppressed"; required: number; value: null });
 export const MINIMUMS = { descriptive: 1, spread: 5, distribution: 8, correlation: 10, group: 8, pooledCities: 5, cityRanking: 10, citySlope: 30, model: 100 } as const;
 function checkedScope(scope: AnalysisScope): AnalysisScope {
   if (!scope || !["global", "city", "cities"].includes(scope.kind)) throw new Error("A valid analysis scope is required.");
@@ -299,12 +299,249 @@ export function conditionalProbability(flags:boolean[],outcomes:boolean[],scope:
   return {...meta(condition.length,"conditional probability with Wilson interval",scope),status:"ok",required,value:{probability:interval.value.probability,ci95:interval.value.ci95,baseline:baselineN/n,conditionN:condition.length}};
 }
 
-export type CityContext = { id:string; timezone:string; lat:number; lon:number; region?:string|null; climateType?:string|null; sizeBand?:string|null };
+export type HistogramResult=ResultMeta & {status:"ok"|"table-only"|"insufficient";bins:Array<{from:number;to:number;count:number}>;required:number;reason:string|null};
+export function histogram(values:number[],scope:AnalysisScope):HistogramResult {
+  const clean=cleanValues(values),n=clean.length,required=MINIMUMS.distribution;
+  if(n<required)return {...meta(n,"Freedman–Diaconis histogram",scope),status:"table-only",bins:[],required,reason:"Histogram suppressed; show the source values as a table."};
+  const sorted=[...clean].sort((a,b)=>a-b),iqr=quantile(sorted,.75)-quantile(sorted,.25),fdWidth=iqr>0?2*iqr/Math.cbrt(n):0;
+  const rawBins=fdWidth>0?Math.ceil((sorted[n-1]-sorted[0])/fdWidth):1,count=Math.max(1,Math.min(30,rawBins)),width=(sorted[n-1]-sorted[0])/count||1;
+  const bins=Array.from({length:count},(_,index)=>({from:sorted[0]+index*width,to:index===count-1?sorted[n-1]:sorted[0]+(index+1)*width,count:0}));
+  for(const value of clean){const index=Math.min(count-1,Math.floor((value-sorted[0])/width));bins[index].count++;}
+  return {...meta(n,"Freedman–Diaconis histogram",scope),status:"ok",bins,required,reason:null};
+}
+
+export function kernelDensity(values:number[],scope:AnalysisScope,points=80):InferentialResult<{x:number;y:number}[]> {
+  const clean=cleanValues(values),n=clean.length,required=MINIMUMS.distribution;
+  if(n<required)return {...meta(n,"Gaussian kernel density with Silverman bandwidth",scope),status:"insufficient",required,value:null};
+  const sd=sampleStandardDeviation(clean),iqr=quantile([...clean].sort((a,b)=>a-b),.75)-quantile([...clean].sort((a,b)=>a-b),.25),scale=Math.min(sd,iqr/1.34)||sd,bandwidth=.9*scale*Math.pow(n,-.2);
+  if(!Number.isFinite(bandwidth)||bandwidth<=0)return {...meta(n,"Gaussian kernel density with Silverman bandwidth",scope),status:"insufficient",required,value:null};
+  const lo=min(clean)-3*bandwidth,hi=max(clean)+3*bandwidth;
+  const density=Array.from({length:points},(_,index)=>{const x=lo+(hi-lo)*index/(points-1),y=clean.reduce((sum,value)=>sum+Math.exp(-.5*((x-value)/bandwidth)**2),0)/(n*bandwidth*Math.sqrt(2*Math.PI));return{x,y};});
+  return {...meta(n,"Gaussian kernel density with Silverman bandwidth",scope),status:"ok",required,value:density};
+}
+
+export type RegressionResult=InferentialResult<{slope:number;intercept:number;rSquared:number;ci95:[number,number];pValue:number;unitSlope10:number}>;
+export function linearRegression(xValues:number[],yValues:number[],scope:AnalysisScope,minimumN:number=MINIMUMS.correlation):RegressionResult {
+  const pairs:Array<[number,number]>=[];for(let i=0;i<Math.min(xValues.length,yValues.length);i++)if(numeric(xValues[i])&&numeric(yValues[i]))pairs.push([xValues[i],yValues[i]]);
+  const n=pairs.length;
+  if(n<minimumN)return {...meta(n,"ordinary least squares regression",scope),status:"insufficient",required:minimumN,value:null};
+  const x=pairs.map(([v])=>v),y=pairs.map(([,v])=>v),fit=pearsonRaw(pairs);
+  if(fit.slope===null||fit.intercept===null)return {...meta(n,"ordinary least squares regression",scope),status:"insufficient",required:minimumN,value:null};
+  const mx=mean(x),sxx=x.reduce((sum,v)=>sum+(v-mx)**2,0),residual=y.reduce((sum,v,i)=>sum+(v-(fit.intercept!+fit.slope!*x[i]))**2,0),se=Math.sqrt((residual/(n-2))/sxx),critical=jStat.studentt.inv(.975,n-2);
+  const pValue=correlation(x,y,"pearson",minimumN).pValue??1;
+  return {...meta(n,"ordinary least squares regression",scope,["Association is not causation."]),status:"ok",required:minimumN,value:{slope:fit.slope,intercept:fit.intercept,rSquared:correlation(x,y,"pearson",minimumN).rSquared??0,ci95:[fit.slope-critical*se,fit.slope+critical*se],pValue,unitSlope10:fit.slope*10}};
+}
+
+export function pairedTTest(aValues:number[],bValues:number[],scope:AnalysisScope):InferentialResult<{difference:number;ci95:[number,number];effectSize:number;pValue:number}> {
+  const paired=Array.from({length:Math.min(aValues.length,bValues.length)},(_,index)=>[aValues[index],bValues[index]] as const).filter(([a,b])=>numeric(a)&&numeric(b)),diffs=paired.map(([a,b])=>a-b),n=diffs.length,required=MINIMUMS.correlation;
+  if(n<required)return {...meta(n,"paired t-test",scope),status:"insufficient",required,value:null};
+  const difference=mean(diffs),sd=sampleStandardDeviation(diffs),se=sd/Math.sqrt(n),t=difference/se,df=n-1,critical=jStat.studentt.inv(.975,df),pValue=2*(1-jStat.studentt.cdf(Math.abs(t),df));
+  return {...meta(n,"paired t-test",scope,["Exploratory paired comparison."]),status:"ok",required,value:{difference,ci95:[difference-critical*se,difference+critical*se],effectSize:sd?difference/sd:0,pValue}};
+}
+
+export function correlationMatrix(metrics:Array<{key:string;label:string;values:number[]}>,scope:AnalysisScope,method:"pearson"|"spearman"="pearson"):InferentialResult<Array<{x:string;y:string;n:number;r:number|null;pValue:number|null;adjustedPValue:number|null;suppressed:boolean}>> {
+  const cells:Array<{x:string;y:string;n:number;r:number|null;pValue:number|null;adjustedPValue:number|null;suppressed:boolean}> = [];
+  for(let i=0;i<metrics.length;i++)for(let j=0;j<metrics.length;j++){
+    const result=scopedCorrelation(metrics[i].values,metrics[j].values,scope,method),r=result.status==="ok"?result.value.r:null,pValue=result.status==="ok"?result.value.pValue:null;
+    cells.push({x:metrics[i].key,y:metrics[j].key,n:result.n,r,pValue,adjustedPValue:null,suppressed:result.status!=="ok"});
+  }
+  const tested=cells.map((cell,index)=>({cell,index})).filter(({cell})=>cell.pValue!==null&&cell.x!==cell.y),correction=benjaminiHochberg(tested.map(({cell})=>cell.pValue!),scope);
+  if(correction.status==="ok")tested.forEach(({cell},index)=>cell.adjustedPValue=correction.value.adjusted[index]);
+  return {...meta(cells.reduce((maxN,cell)=>Math.max(maxN,cell.n),0),`${method} correlation matrix with Benjamini–Hochberg FDR`,scope,["Exploratory associations; correlation does not establish cause."]),status:"ok",required:MINIMUMS.correlation,value:cells};
+}
+
+export function scopedAnova(valuesByGroup:number[][],scope:AnalysisScope):InferentialResult<{fStatistic:number;pValue:number;groups:number}> {
+  const groups=valuesByGroup.map(cleanValues).filter(group=>group.length>=MINIMUMS.group),n=groups.reduce((sum,g)=>sum+g.length,0),required=MINIMUMS.group;
+  if(groups.length<3)return {...meta(n,"one-way ANOVA",scope),status:"insufficient",required,value:null};
+  const result=oneWayAnova(groups,3*required);
+  if(result.fStatistic===null||result.pValue===null)return {...meta(n,"one-way ANOVA",scope),status:"insufficient",required,value:null};
+  return {...meta(n,"one-way ANOVA",scope,["Exploratory; daily means are recommended for hypothesis tests."]),status:"ok",required,value:{fStatistic:result.fStatistic,pValue:result.pValue,groups:groups.length}};
+}
+
+export function dunnPostHoc(valuesByGroup:Array<{label:string;values:number[]}>,scope:AnalysisScope,omnibusPValue:number):InferentialResult<Array<{a:string;b:string;z:number;pValue:number;adjustedPValue:number}>> {
+  const groups=valuesByGroup.map(group=>({...group,values:cleanValues(group.values)})).filter(group=>group.values.length>=MINIMUMS.group),n=groups.reduce((sum,g)=>sum+g.values.length,0),required=MINIMUMS.group;
+  if(groups.length<3)return {...meta(n,"Dunn post-hoc with Benjamini–Hochberg correction",scope),status:"insufficient",required,value:null};
+  if(!numeric(omnibusPValue)||omnibusPValue>=.05)return {...meta(n,"Dunn post-hoc with Benjamini–Hochberg correction",scope,["Pairwise tests are suppressed because the Kruskal–Wallis test was not significant."]),status:"suppressed",required,value:null};
+  const all=groups.flatMap(group=>group.values),allRanks=ranks(all),meanRanks:number[]=[];let offset=0;
+  for(const group of groups){meanRanks.push(mean(allRanks.slice(offset,offset+group.values.length)));offset+=group.values.length;}
+  const ties=new Map<number,number>();for(const value of all)ties.set(value,(ties.get(value)??0)+1);
+  const tieCorrection=1-[...ties.values()].reduce((sum,t)=>sum+t**3-t,0)/(n**3-n),pairs:Array<{a:string;b:string;z:number;pValue:number;adjustedPValue:number}> = [];
+  for(let i=0;i<groups.length;i++)for(let j=i+1;j<groups.length;j++){const se=Math.sqrt(n*(n+1)/12*tieCorrection*(1/groups[i].values.length+1/groups[j].values.length)),z=se?(meanRanks[i]-meanRanks[j])/se:0;pairs.push({a:groups[i].label,b:groups[j].label,z,pValue:normalTwoSided(z),adjustedPValue:1});}
+  const correction=benjaminiHochberg(pairs.map(pair=>pair.pValue),scope);
+  if(correction.status==="ok")pairs.forEach((pair,index)=>pair.adjustedPValue=correction.value.adjusted[index]);
+  return {...meta(n,"Dunn post-hoc with Benjamini–Hochberg correction",scope,["Exploratory; run only after a significant Kruskal–Wallis test."]),status:"ok",required,value:pairs};
+}
+
+export function randomEffectsMetaAnalysis(estimates:Array<{slope:number;standardError:number}>,scope:AnalysisScope):InferentialResult<{slope:number;ci95:[number,number];tauSquared:number;iSquared:number;q:number}> {
+  const valid=estimates.filter(item=>numeric(item.slope)&&numeric(item.standardError)&&item.standardError>0),k=valid.length,required=3;
+  if(k<required)return {...meta(k,"DerSimonian–Laird random-effects meta-analysis",scope),status:"insufficient",required,value:null};
+  const fixedWeights=valid.map(item=>1/item.standardError**2),fixed=valid.reduce((sum,item,index)=>sum+fixedWeights[index]*item.slope,0)/fixedWeights.reduce((s,w)=>s+w,0);
+  const q=valid.reduce((sum,item,index)=>sum+fixedWeights[index]*(item.slope-fixed)**2,0),c=fixedWeights.reduce((s,w)=>s+w,0)-fixedWeights.reduce((s,w)=>s+w*w,0)/fixedWeights.reduce((s,w)=>s+w,0),tauSquared=Math.max(0,(q-(k-1))/c);
+  const weights=valid.map(item=>1/(item.standardError**2+tauSquared)),weightSum=weights.reduce((s,w)=>s+w,0),slope=valid.reduce((sum,item,index)=>sum+weights[index]*item.slope,0)/weightSum,se=Math.sqrt(1/weightSum);
+  return {...meta(k,"DerSimonian–Laird random-effects meta-analysis",scope),status:"ok",required,value:{slope,ci95:[slope-1.95996398454*se,slope+1.95996398454*se],tauSquared,iSquared:q===0?0:Math.max(0,(q-(k-1))/q*100),q}};
+}
+
+export function clusterBootstrapCorrelation(cityPairs:Array<Array<[number,number]>>,scope:AnalysisScope,adjustWithinCity=false,seed=1,repetitions=2000):InferentialResult<{r:number;ci95:[number,number];pValue:number}> {
+  const eligible=cityPairs.filter(pairs=>pairs.length>=MINIMUMS.correlation),cityCount=eligible.length,n=eligible.reduce((sum,pairs)=>sum+pairs.length,0),required=MINIMUMS.pooledCities;
+  if(cityCount<required)return {...meta(n,"cluster bootstrap Pearson correlation",scope),status:"insufficient",required,value:null};
+  const pooled=eligible.flatMap(pairs=>adjustWithinCity?(()=>{const mx=mean(pairs.map(pair=>pair[0])),my=mean(pairs.map(pair=>pair[1]));return pairs.map(([x,y]):[number,number]=>[x-mx,y-my]);})():pairs),observed=pearsonRaw(pooled).r;
+  if(observed===null)return {...meta(n,"cluster bootstrap Pearson correlation",scope),status:"insufficient",required,value:null};
+  const rng=seededRandom(seed),samples:number[]=[];
+  for(let iteration=0;iteration<repetitions;iteration++){const resampled:Array<[number,number]>=[];for(let index=0;index<cityCount;index++){const pairs=eligible[Math.floor(rng()*cityCount)];if(adjustWithinCity){const mx=mean(pairs.map(pair=>pair[0])),my=mean(pairs.map(pair=>pair[1]));resampled.push(...pairs.map(([x,y]):[number,number]=>[x-mx,y-my]));}else resampled.push(...pairs);}const r=pearsonRaw(resampled).r;if(r!==null)samples.push(r);}
+  if(!samples.length)return {...meta(n,"cluster bootstrap Pearson correlation",scope),status:"insufficient",required,value:null};
+  const sorted=samples.sort((a,b)=>a-b),lower=quantile(sorted,.025),upper=quantile(sorted,.975),tail=Math.min(samples.filter(value=>value<=0).length,samples.filter(value=>value>=0).length),pValue=Math.min(1,2*tail/samples.length);
+  return {...meta(n,"cluster bootstrap Pearson correlation",scope,["Cities, rather than individual hours, are resampled.","Association is not causation."]),status:"ok",required,value:{r:observed,ci95:[lower,upper],pValue}};
+}
+
+export function cityAdjustedCorrelation(readings:Reading[],xMetric:MetricKey,yMetric:MetricKey,scope:AnalysisScope):InferentialResult<{rawR:number;adjustedR:number;rawCi95:[number,number];adjustedCi95:[number,number];rawP:number;adjustedP:number;cityCount:number;disagrees:boolean}> {
+  const scoped=rowsForScope(readings,scope),groups=new Map<string,Reading[]>();
+  for(const row of scoped){const city=row.city_id??(scope.kind==="city"?scope.cityId:null);if(!city)continue;const rows=groups.get(city)??[];rows.push(row);groups.set(city,rows);}
+  const cityPairs=[...groups.values()].map(rows=>rows.flatMap(row=>{const x=metricValue(row,xMetric),y=metricValue(row,yMetric);return x===null||y===null?[]:[[x,y] as [number,number]];})).filter(pairs=>pairs.length>=MINIMUMS.correlation),n=cityPairs.reduce((sum,pairs)=>sum+pairs.length,0);
+  const raw=clusterBootstrapCorrelation(cityPairs,scope,false),adjusted=clusterBootstrapCorrelation(cityPairs,scope,true);
+  if(raw.status!=="ok"||adjusted.status!=="ok")return {...meta(n,"raw and city-demeaned Pearson correlation",scope),status:"insufficient",required:MINIMUMS.pooledCities,value:null};
+  return {...meta(n,"raw and city-demeaned Pearson correlation with city-cluster bootstrap",scope,["Association is not causation."]),status:"ok",required:MINIMUMS.pooledCities,value:{rawR:raw.value.r,adjustedR:adjusted.value.r,rawCi95:raw.value.ci95,adjustedCi95:adjusted.value.ci95,rawP:raw.value.pValue,adjustedP:adjusted.value.pValue,cityCount:cityPairs.length,disagrees:Math.sign(raw.value.r)!==Math.sign(adjusted.value.r)}};
+}
+
+export function citySlopeMetaAnalysis(readings:Reading[],xMetric:MetricKey,yMetric:MetricKey,scope:AnalysisScope):InferentialResult<{cities:Array<{cityId:string;n:number;slope:number;ci95:[number,number]}>&{};pooledSlope:number;pooledCi95:[number,number];iSquared:number;tauSquared:number;q:number}> {
+  const scoped=rowsForScope(readings,scope),groups=new Map<string,Reading[]>();for(const row of scoped){const id=row.city_id??(scope.kind==="city"?scope.cityId:null);if(!id)continue;const values=groups.get(id)??[];values.push(row);groups.set(id,values);}
+  const cities:Array<{cityId:string;n:number;slope:number;ci95:[number,number];standardError:number}>=[];
+  for(const [cityId,rows] of groups){const x:number[]=[],y:number[]=[];for(const row of rows){const xv=metricValue(row,xMetric),yv=metricValue(row,yMetric);if(xv!==null&&yv!==null){x.push(xv);y.push(yv);}}
+    const fit=linearRegression(x,y,scope,MINIMUMS.citySlope);if(fit.status!=="ok")continue;
+    const critical=jStat.studentt.inv(.975,fit.n-2),se=(fit.value.ci95[1]-fit.value.ci95[0])/(2*critical);
+    cities.push({cityId,n:fit.n,slope:fit.value.slope,ci95:fit.value.ci95,standardError:se});
+  }
+  const n=cities.reduce((sum,city)=>sum+city.n,0),required=3;
+  if(cities.length<required)return {...meta(n,"per-city OLS slopes with DerSimonian–Laird meta-analysis",scope),status:"insufficient",required,value:null};
+  const pooled=randomEffectsMetaAnalysis(cities.map(city=>({slope:city.slope,standardError:city.standardError})),scope);
+  if(pooled.status!=="ok")return {...meta(n,"per-city OLS slopes with DerSimonian–Laird meta-analysis",scope),status:"insufficient",required,value:null};
+  return {...meta(n,"per-city OLS slopes with DerSimonian–Laird meta-analysis",scope,["Each city is fitted separately; this reduces between-city confounding."]),status:"ok",required,value:{cities: cities.map(city=>({cityId:city.cityId,n:city.n,slope:city.slope,ci95:city.ci95})),pooledSlope:pooled.value.slope,pooledCi95:pooled.value.ci95,iSquared:pooled.value.iSquared,tauSquared:pooled.value.tauSquared,q:pooled.value.q}};
+}
+
+export type GridCell={x:string;y:string;n:number;mean:number|null;median:number|null;suppressed:boolean;cityCount:number;dominanceWarning:boolean};
+export function binnedGrid(rows:DerivedReading[],xKey:keyof DerivedReading,yKey:keyof DerivedReading,target:MetricKey,scope:AnalysisScope):InferentialResult<GridCell[]> {
+  const scoped=rowsForScope(rows,scope),groups=new Map<string,{x:string;y:string;values:number[];cities:Set<string>}>();
+  for(const row of scoped){const x=row[xKey],y=row[yKey],value=metricValue(row,target);if(typeof x!=="string"||typeof y!=="string"||value===null)continue;const key=`${x}\u0000${y}`,cell=groups.get(key)??{x,y,values:[],cities:new Set<string>()};cell.values.push(value);if(row.city_id)cell.cities.add(row.city_id);groups.set(key,cell);}
+  const cells=[...groups.values()].map(cell=>{const cityCount=cell.cities.size,n=cell.values.length,dominanceWarning=scope.kind==="global"&&cell.cities.size>0&&Math.max(...[...cell.cities].map(city=>scoped.filter(row=>row.city_id===city&&row[xKey]===cell.x&&row[yKey]===cell.y&&metricValue(row,target)!==null).length))/n>.3;const suppressed=n<5||dominanceWarning;return{x:cell.x,y:cell.y,n,mean:suppressed?null:mean(cell.values),median:suppressed?null:median(cell.values),suppressed,cityCount,dominanceWarning};});
+  return {...meta(cells.reduce((sum,cell)=>sum+cell.n,0),"two-factor binned group summaries",scope,["Association is not causation."]),status:"ok",required:5,value:cells};
+}
+
+export const WEATHER_SCENARIOS=[
+  {key:"hot-sunny-calm",label:"Hot, sunny, calm",test:(row:DerivedReading)=>row.temperature_c!==null&&row.temperature_c*9/5+32>=85&&row.cloud_coverage_pct!==null&&row.cloud_coverage_pct<=25&&row.wind_speed_ms!==null&&row.wind_speed_ms*2.23694<5&&row.is_daytime===true},
+  {key:"cold-clear-calm-night",label:"Cold, clear, calm night",test:(row:DerivedReading)=>row.temperature_c!==null&&row.temperature_c*9/5+32<=40&&row.cloud_coverage_pct!==null&&row.cloud_coverage_pct<=25&&row.wind_speed_ms!==null&&row.wind_speed_ms*2.23694<3&&row.is_daytime===false},
+  {key:"humid-stagnant",label:"Humid and stagnant",test:(row:DerivedReading)=>row.relative_humidity!==null&&row.relative_humidity>=80&&row.wind_speed_ms!==null&&row.wind_speed_ms*2.23694<5},
+  {key:"rainy-windy",label:"Rainy and windy",test:(row:DerivedReading)=>row.precip_flag===true&&row.wind_speed_ms!==null&&row.wind_speed_ms*2.23694>=10},
+  {key:"after-rain",label:"Within 24 hours after rain",test:(row:DerivedReading)=>row.hours_since_rain!==null&&row.hours_since_rain>0&&row.hours_since_rain<=24},
+  {key:"high-pressure-light-wind",label:"High pressure and light wind",test:(row:DerivedReading)=>row.pressure_bin==="high"&&row.wind_speed_ms!==null&&row.wind_speed_ms*2.23694<5},
+] as const;
+
+export function compareCondition(values:number[],conditionFlags:boolean[],scope:AnalysisScope,robust=false):InferentialResult<{inside:{n:number;mean:number;median:number};outside:{n:number;mean:number;median:number};difference:number;ci95:[number,number];effectSize:number;pValue:number;testMethod:string}> {
+  const inside:number[]=[],outside:number[]=[];for(let index=0;index<Math.min(values.length,conditionFlags.length);index++){if(!numeric(values[index]))continue;(conditionFlags[index]?inside:outside).push(values[index]);}
+  const n=inside.length+outside.length,required=MINIMUMS.group;
+  if(inside.length<required||outside.length<required)return {...meta(n,robust?"Mann–Whitney scenario comparison":"Welch scenario comparison",scope),status:"insufficient",required,value:null};
+  const test=robust?mannWhitney(inside,outside,scope):welchTTest(inside,outside,scope);
+  const boot=bootstrapDifference(inside,outside,scope,20261029,2000);
+  if(test.status!=="ok"||boot.status!=="ok")return {...meta(n,"scenario comparison",scope),status:"insufficient",required,value:null};
+  return {...meta(n,test.method,scope,["Scenario thresholds are exploratory; association is not cause."]),status:"ok",required,value:{inside:{n:inside.length,mean:mean(inside),median:median(inside)},outside:{n:outside.length,mean:mean(outside),median:median(outside)},difference:mean(inside)-mean(outside),ci95:boot.value.ci95,effectSize:test.value.effectSize,pValue:"pValue" in test.value?test.value.pValue:0,testMethod:test.method}};
+}
+
+export function conditionalAqiProbability(rows:Reading[],conditions:boolean[],threshold:number,scope:AnalysisScope):InferentialResult<{condition:{successes:number;n:number;probability:number;ci95:[number,number]};baseline:{successes:number;n:number;probability:number};difference:number}> {
+  const n=Math.min(rows.length,conditions.length),condition=rows.slice(0,n).filter((_,index)=>conditions[index]&&numeric(rows[index].aqi)),baselineRows=rows.slice(0,n).filter(row=>numeric(row.aqi)),successes=condition.filter(row=>row.aqi!>threshold).length,baseSuccess=baselineRows.filter(row=>row.aqi!>threshold).length,required=20;
+  if(condition.length<5||n<required)return {...meta(condition.length,"conditional AQI probability with Wilson interval",scope),status:"insufficient",required,value:null};
+  const interval=wilsonInterval(successes,condition.length,scope);if(interval.status!=="ok")return {...meta(condition.length,"conditional AQI probability with Wilson interval",scope),status:"insufficient",required,value:null};
+  const probability=successes/condition.length,baseline=baselineRows.length?baseSuccess/baselineRows.length:0;
+  return {...meta(condition.length,"conditional AQI probability with Wilson interval",scope),status:"ok",required,value:{condition:{successes,n:condition.length,probability,ci95:interval.value.ci95},baseline:{successes:baseSuccess,n:baselineRows.length,probability:baseline},difference:probability-baseline}};
+}
+
+function invertMatrix(input:number[][]):number[][]|null {
+  const n=input.length,matrix=input.map((row,index)=>[...row,...Array.from({length:n},(_,column)=>Number(index===column))]);
+  for(let column=0;column<n;column++){let pivot=column;for(let row=column+1;row<n;row++)if(Math.abs(matrix[row][column])>Math.abs(matrix[pivot][column]))pivot=row;if(Math.abs(matrix[pivot][column])<1e-12)return null;[matrix[column],matrix[pivot]]=[matrix[pivot],matrix[column]];const value=matrix[column][column];for(let j=0;j<2*n;j++)matrix[column][j]/=value;for(let row=0;row<n;row++)if(row!==column){const factor=matrix[row][column];for(let j=0;j<2*n;j++)matrix[row][j]-=factor*matrix[column][j];}}
+  return matrix.map(row=>row.slice(n));
+}
+function multiplyMatrixVector(matrix:number[][],vector:number[]){return matrix.map(row=>row.reduce((sum,value,index)=>sum+value*vector[index],0));}
+export function multipleWeatherRegression(rows:DerivedReading[],target:MetricKey,scope:AnalysisScope,includeInteractions=true):InferentialResult<{n:number;coefficients:Array<{feature:string;estimate:number;ci95:[number,number];pValue:number;vif:number}>;rSquared:number;adjustedRSquared:number;residualSd:number}> {
+  const scoped=rowsForScope(rows,scope),fields:Array<{name:string;get:(row:DerivedReading)=>number|null}>=[
+    {name:"temperature",get:row=>row.temperature_c===null?null:(row.temperature_c*9/5+32)},
+    {name:"wind_speed",get:row=>row.wind_speed_ms===null?null:row.wind_speed_ms*2.23694},
+    {name:"humidity",get:row=>row.relative_humidity},
+    {name:"cloud_cover",get:row=>row.cloud_coverage_pct},
+    {name:"pressure",get:row=>row.barometric_pressure_pa===null?null:row.barometric_pressure_pa/3386.39},
+    {name:"precipitation_flag",get:row=>row.precip_flag===null?null:Number(row.precip_flag)},
+    {name:"hour_sin",get:row=>row.local_hour===null?null:Math.sin(2*Math.PI*row.local_hour/24)},
+    {name:"hour_cos",get:row=>row.local_hour===null?null:Math.cos(2*Math.PI*row.local_hour/24)},
+  ];
+  const complete=scoped.map(row=>({row,target:metricValue(row,target),values:fields.map(field=>field.get(row))})).filter((item):item is {row:DerivedReading;target:number;values:number[]}=>item.target!==null&&item.values.every(numeric));
+  const n=complete.length,required=MINIMUMS.model;
+  if(n<required)return {...meta(n,"standardized multiple linear regression",scope),status:"insufficient",required,value:null};
+  const predictors=fields.map((field,index)=>{const values=complete.map(row=>row.values[index]),avg=mean(values),sd=sampleStandardDeviation(values)||1;return{name:field.name,values:values.map(value=>(value-avg)/sd)};});
+  if(includeInteractions){for(const [name,left,right] of [["temperature × wind","temperature","wind_speed"],["humidity × wind","humidity","wind_speed"]] as const){const a=predictors.find(item=>item.name===left)!,b=predictors.find(item=>item.name===right)!;predictors.push({name,values:a.values.map((value,index)=>value*b.values[index])});}}
+  const y=complete.map(row=>row.target),columns=[Array(n).fill(1),...predictors.map(item=>item.values)],design=Array.from({length:n},(_,row)=>columns.map(column=>column[row])),xtx=Array.from({length:columns.length},(_,i)=>Array.from({length:columns.length},(_,j)=>design.reduce((sum,row)=>sum+row[i]*row[j],0))),inverse=invertMatrix(xtx),parameterCount=columns.length;
+  if(!inverse)return {...meta(n,"standardized multiple linear regression",scope),status:"insufficient",required,value:null};
+  const xty=columns.map(column=>column.reduce((sum,value,index)=>sum+value*y[index],0)),beta=multiplyMatrixVector(inverse,xty),predicted=design.map(row=>row.reduce((sum,value,index)=>sum+value*beta[index],0)),residuals=y.map((value,index)=>value-predicted[index]),rss=residuals.reduce((sum,value)=>sum+value**2,0),tss=y.reduce((sum,value)=>sum+(value-mean(y))**2,0),rSquared=tss?1-rss/tss:0,adjustedRSquared=1-(1-rSquared)*(n-1)/(n-parameterCount),residualVariance=rss/(n-parameterCount),residualSd=Math.sqrt(residualVariance),critical=jStat.studentt.inv(.975,n-parameterCount);
+  const coefficients=predictors.map((predictor,index)=>{const variance=inverse[index+1][index+1]*residualVariance,se=Math.sqrt(Math.max(0,variance)),t=se?beta[index+1]/se:0,pValue=se?2*(1-jStat.studentt.cdf(Math.abs(t),n-parameterCount)):1;
+    const others=predictors.filter((_,other)=>other!==index),vif=others.length?(()=>{const otherColumns=[Array(n).fill(1),...others.map(item=>item.values)],otherDesign=Array.from({length:n},(_,row)=>otherColumns.map(column=>column[row])),otherXtx=Array.from({length:otherColumns.length},(_,i)=>Array.from({length:otherColumns.length},(_,j)=>otherDesign.reduce((sum,row)=>sum+row[i]*row[j],0))),otherInverse=invertMatrix(otherXtx);if(!otherInverse)return Infinity;const targetValues=predictor.values,otherXty=otherColumns.map(column=>column.reduce((sum,value,row)=>sum+value*targetValues[row],0)),otherBeta=multiplyMatrixVector(otherInverse,otherXty),otherPredicted=otherDesign.map(row=>row.reduce((sum,value,j)=>sum+value*otherBeta[j],0)),total=targetValues.reduce((sum,value)=>sum+(value-mean(targetValues))**2,0),left=targetValues.reduce((sum,value,row)=>sum+(value-otherPredicted[row])**2,0),r2=total?1-left/total:0;return 1/Math.max(.0001,1-r2);})():1;
+    return{feature:predictor.name,estimate:beta[index+1],ci95:[beta[index+1]-critical*se,beta[index+1]+critical*se] as [number,number],pValue,vif};});
+  return {...meta(n,"standardized multiple linear regression with local-hour controls",scope,["Predictive association, not cause.",...(coefficients.some(item=>item.vif>5)?["Multicollinearity warning: at least one variance inflation factor exceeds 5."]:[])]),status:"ok",required,value:{n,coefficients,rSquared,adjustedRSquared,residualSd}};
+}
+
+export function effectiveSampleSize(values:number[],scope:AnalysisScope):InferentialResult<{rho1:number;effectiveN:number}> {
+  const clean=cleanValues(values),n=clean.length,required=MINIMUMS.correlation;
+  if(n<required)return {...meta(n,"lag-1 autocorrelation effective sample size",scope),status:"insufficient",required,value:null};
+  const avg=mean(clean),denominator=clean.reduce((sum,v)=>sum+(v-avg)**2,0),rho1=denominator===0?0:clean.slice(1).reduce((sum,value,index)=>sum+(value-avg)*(clean[index]-avg),0)/denominator;
+  const effectiveN=Math.max(1,Math.min(n,n*(1-rho1)/(1+rho1)));
+  return {...meta(n,"lag-1 autocorrelation effective sample size",scope),status:"ok",required,value:{rho1,effectiveN}};
+}
+
+export function autocorrelation(values:number[],scope:AnalysisScope,maxLag=48):InferentialResult<Array<{lag:number;r:number}>> {
+  const clean=cleanValues(values),n=clean.length,required=MINIMUMS.correlation;
+  if(n<required)return {...meta(n,"hourly sample autocorrelation",scope),status:"insufficient",required,value:null};
+  const avg=mean(clean),denominator=clean.reduce((sum,value)=>sum+(value-avg)**2,0),lags=Array.from({length:Math.min(maxLag,n-1)},(_,index)=>index+1).map(lag=>({lag,r:denominator?clean.slice(lag).reduce((sum,value,index)=>sum+(value-avg)*(clean[index]-avg),0)/denominator:0}));
+  return {...meta(n,"hourly sample autocorrelation",scope,["Irregular timestamps are not interpolated; provide hourly data only."]),status:"ok",required,value:lags};
+}
+
+export function dailyMeans(readings:Reading[],cities:CityContext[],metric:MetricKey,scope:AnalysisScope):Array<{cityId:string;localDate:string;mean:number;n:number;method:string}> {
+  const scoped=rowsForScope(readings,scope),contexts=new Map(cities.map(city=>[city.id,city])),groups=new Map<string,number[]>();
+  for(const row of scoped){const cityId=row.city_id??(scope.kind==="city"?scope.cityId:null),city=cityId?contexts.get(cityId):undefined,value=metricValue(row,metric);if(!cityId||!city||value===null)continue;const parts=localParts(row.recorded_at,city.timezone),date=`${parts.year}-${String(parts.month).padStart(2,"0")}-${String(parts.day).padStart(2,"0")}`,key=`${cityId}|${date}`,values=groups.get(key)??[];values.push(value);groups.set(key,values);}
+  return [...groups].map(([key,values])=>{const [cityId,localDate]=key.split("|");return{cityId,localDate,mean:mean(values),n:values.length,method:"mean of observed local-day entries"};}).sort((a,b)=>a.localDate.localeCompare(b.localDate)||a.cityId.localeCompare(b.cityId));
+}
+
+export function localTimeProfiles(readings:Reading[],cities:CityContext[],metric:MetricKey,scope:AnalysisScope):InferentialResult<Array<{bin:string;n:number;mean:number|null;median:number|null;suppressed:boolean}>> {
+  const scoped=rowsForScope(readings,scope),contexts=new Map(cities.map(city=>[city.id,city])),hours=new Map<string,number[]>();
+  for(const row of scoped){const cityId=row.city_id??(scope.kind==="city"?scope.cityId:null),city=cityId?contexts.get(cityId):undefined,value=metricValue(row,metric);if(!city||value===null)continue;const hour=localParts(row.recorded_at,city.timezone).hour,key=scope.kind==="global"?`${cityId}:${hour}`:hour,values=hours.get(key)??[];values.push(value);hours.set(key,values);}
+  const profile=Array.from({length:24},(_,hour)=>{const bins=[...hours].filter(([key])=>scope.kind==="global"?key.endsWith(`:${String(hour).padStart(2,"0")}`):key===String(hour)).flatMap(([,values])=>values),n=bins.length,suppressed=n<3;return{bin:String(hour).padStart(2,"0"),n,mean:suppressed?null:mean(bins),median:suppressed?null:median(bins),suppressed};});
+  return {...meta(profile.reduce((sum,row)=>sum+row.n,0),"local hour-of-day profile",scope),status:"ok",required:3,value:profile};
+}
+
+export function dailyTrend(readings:Reading[],cities:CityContext[],metric:MetricKey,scope:AnalysisScope):InferentialResult<{slopePerWeek:number;ci95:[number,number];pValue:number;mannKendallP:number;dailyN:number}> {
+  const daily=dailyMeans(readings,cities,metric,scope).sort((a,b)=>a.localDate.localeCompare(b.localDate)),required=MINIMUMS.correlation;
+  if(daily.length<required)return {...meta(daily.length,"daily-mean OLS trend and Mann–Kendall",scope),status:"insufficient",required,value:null};
+  const origin=Date.parse(`${daily[0].localDate}T12:00:00Z`),x=daily.map(row=>(Date.parse(`${row.localDate}T12:00:00Z`)-origin)/604800000),y=daily.map(row=>row.mean),fit=linearRegression(x,y,scope,required),mk=mannKendall(y,scope);
+  if(fit.status!=="ok"||mk.status!=="ok")return {...meta(daily.length,"daily-mean OLS trend and Mann–Kendall",scope),status:"insufficient",required,value:null};
+  return {...meta(daily.length,"daily-mean OLS trend and Mann–Kendall",scope,["OLS confidence interval and p-value are exploratory; Mann–Kendall is robust to distribution shape."]),status:"ok",required,value:{slopePerWeek:fit.value.slope,ci95:fit.value.ci95,pValue:fit.value.pValue,mannKendallP:mk.value.pValue,dailyN:daily.length}};
+}
+
+export function exceedanceSummary(readings:Reading[],scope:AnalysisScope):InferentialResult<{thresholds:Array<{threshold:number;hours:number;share:number}>;longestRunAbove100:number;eventsAbove100:number}> {
+  const rows=rowsForScope(readings,scope).filter(row=>numeric(row.aqi)&&Number.isFinite(Date.parse(row.recorded_at))).sort((a,b)=>Date.parse(a.recorded_at)-Date.parse(b.recorded_at)),n=rows.length,required=1;
+  if(!n)return {...meta(0,"AQI exceedance and event summary",scope),status:"insufficient",required,value:null};
+  let run=0,longest=0,events=0,inEvent=false,previous=0;
+  for(const row of rows){const time=Date.parse(row.recorded_at),above=row.aqi!>100;if(above){run=run&&time-previous<=1.5*3600000?run+1:1;longest=Math.max(longest,run);if(!inEvent||time-previous>1.5*3600000)events++;inEvent=true;}else{run=0;inEvent=false;}previous=time;}
+  return {...meta(n,"AQI exceedance and event summary",scope),status:"ok",required,value:{thresholds:[50,100,150].map(threshold=>{const hours=rows.filter(row=>row.aqi!>threshold).length;return{threshold,hours,share:hours/n};}),longestRunAbove100:longest,eventsAbove100:events}};
+}
+
+export function anomalies(readings:DerivedReading[],scope:AnalysisScope):InferentialResult<Array<{cityId:string;recordedAt:string;delta:number;weather:string}>> {
+  const rows=rowsForScope(readings,scope).filter(row=>numeric(row.aqi_delta_vs_hour_mean)),n=rows.length,required=MINIMUMS.spread;
+  if(n<required)return {...meta(n,"hour-adjusted AQI anomaly flags",scope),status:"insufficient",required,value:null};
+  const values=rows.map(row=>row.aqi_delta_vs_hour_mean!),sd=sampleStandardDeviation(values),threshold=2*sd;
+  const flagged=rows.filter(row=>Math.abs(row.aqi_delta_vs_hour_mean!)>threshold).map(row=>({cityId:row.city_id??"unknown",recordedAt:row.recorded_at,delta:row.aqi_delta_vs_hour_mean!,weather:[row.text_description,temperatureBin(row.temperature_c),windBin(row.wind_speed_ms),row.precipitation_type].filter(Boolean).join(" · ")}));
+  return {...meta(n,"hour-adjusted AQI anomaly flags (> ±2 SD)",scope),status:"ok",required,value:flagged};
+}
+
+export type CityContext = { id:string; timezone:string; lat:number; lon:number; name?:string; slug?:string; state?:string; population?:number|null; region?:string|null; climateType?:string|null; sizeBand?:string|null };
 export type DerivedReading = Reading & {
   local_hour:number|null; day_of_week:number|null; month:number|null; season:string|null; is_daytime:boolean|null;
   precip_flag:boolean|null; hours_since_rain:number|null; rain_last_24h_mm:number|null; wind_dir_sector:string|null;
   temp_bin:string|null; wind_bin:string|null; rh_bin:string|null; cloud_bin:string|null; pressure_bin:string|null;
   pressure_change_3h:number|null; aqi_delta_vs_hour_mean:number|null; pollutant_delta_vs_hour_mean:Record<string,number|null>;
+  metric_delta_vs_hour_mean:Partial<Record<MetricKey,number|null>>;
   city_timezone:string; city_region:string|null; climate_type:string|null; city_size_band:string|null;
 };
 export function rowsForScope<T extends {city_id?:string}>(rows:T[],scope:AnalysisScope):T[] {
@@ -352,9 +589,10 @@ export function deriveFeatures(input:Reading[],cities:CityContext[],scope:Analys
   for(const [cityId,unsorted] of cityRows){
     const city=cityById.get(cityId);if(!city)continue;
     const ordered=[...unsorted].sort((a,b)=>Date.parse(a.recorded_at)-Date.parse(b.recorded_at));
-    const hours=new Map<number,number[]>(),pollutantHours=new Map<string,Map<number,number[]>>();
+    const hours=new Map<number,number[]>(),pollutantHours=new Map<string,Map<number,number[]>>(),allMetricHours=new Map<MetricKey,Map<number,number[]>>();
     for(const row of ordered){const part=localParts(row.recorded_at,city.timezone),hour=Number(part.hour),aqiValues=hours.get(hour)??[];if(numeric(row.aqi))aqiValues.push(row.aqi);hours.set(hour,aqiValues);
       for(const field of ["pm25","pm10","ozone","no2","so2","co"] as const){const byHour=pollutantHours.get(field)??new Map<number,number[]>(),values=byHour.get(hour)??[];if(numeric(row[field]))values.push(row[field]!);byHour.set(hour,values);pollutantHours.set(field,byHour);}}
+    for(const row of ordered){const hour=Number(localParts(row.recorded_at,city.timezone).hour);for(const metric of NUMERIC_METRICS){const value=metricValue(row,metric.key),byHour=allMetricHours.get(metric.key)??new Map<number,number[]>(),values=byHour.get(hour)??[];if(value!==null)values.push(value);byHour.set(hour,values);allMetricHours.set(metric.key,byHour);}}
     const pressure=ordered.map(row=>row.barometric_pressure_pa).filter(numeric).sort((a,b)=>a-b),pLow=pressure.length?quantile(pressure,1/3):null,pHigh=pressure.length?quantile(pressure,2/3):null;
     const timestamps=ordered.map(row=>Date.parse(row.recorded_at));
     let lastRain:number|null=null,left24=0,rainSum=0,rainHours=0;
@@ -372,6 +610,7 @@ export function deriveFeatures(input:Reading[],cities:CityContext[],scope:Analys
       const solar=sunriseSunsetUtc(localDate,city.lat,city.lon),utcNow=new Date(timestamp),utcMinute=utcNow.getUTCHours()*60+utcNow.getUTCMinutes();
       const localHourMean=hours.get(hour)??[],aqiMean=localHourMean.length?mean(localHourMean):null;
       const pollutantDeltaVsHourMean=Object.fromEntries((["pm25","pm10","ozone","no2","so2","co"] as const).map(field=>{const values=pollutantHours.get(field)?.get(hour)??[];return [field,numeric(row[field])&&values.length?row[field]!-mean(values):null];}));
+      const metricDeltaVsHourMean=Object.fromEntries(NUMERIC_METRICS.map(metric=>{const value=metricValue(row,metric.key),values=allMetricHours.get(metric.key)?.get(hour)??[];return[metric.key,value!==null&&values.length?value-mean(values):null];})) as Partial<Record<MetricKey,number|null>>;
       const sector=row.wind_speed_ms!==null&&row.wind_speed_ms<1?"calm":numeric(row.wind_direction_deg)?(["N","NE","E","SE","S","SW","W","NW"][Math.round(row.wind_direction_deg/45)%8]):null;
       result.push({...row,local_hour:Number.isFinite(hour)?hour:null,day_of_week:["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].indexOf(part.weekday),month,season,
         is_daytime:solar.sunrise===null?false:solar.sunset===null?true:utcMinute>=solar.sunrise&&utcMinute<=solar.sunset,
@@ -379,7 +618,7 @@ export function deriveFeatures(input:Reading[],cities:CityContext[],scope:Analys
         temp_bin:temperatureBin(row.temperature_c),wind_bin:windBin(row.wind_speed_ms),rh_bin:humidityBin(row.relative_humidity),cloud_bin:cloudBin(row.cloud_coverage_pct),
         pressure_bin:!numeric(row.barometric_pressure_pa)||pLow===null||pHigh===null?null:row.barometric_pressure_pa<=pLow?"low":row.barometric_pressure_pa<=pHigh?"medium":"high",
         pressure_change_3h:numeric(prior)&&numeric(row.barometric_pressure_pa)?row.barometric_pressure_pa-prior:null,
-        aqi_delta_vs_hour_mean:numeric(row.aqi)&&aqiMean!==null?row.aqi-aqiMean:null,pollutant_delta_vs_hour_mean:pollutantDeltaVsHourMean,
+        aqi_delta_vs_hour_mean:numeric(row.aqi)&&aqiMean!==null?row.aqi-aqiMean:null,pollutant_delta_vs_hour_mean:pollutantDeltaVsHourMean,metric_delta_vs_hour_mean:metricDeltaVsHourMean,
         city_timezone:city.timezone,city_region:city.region??null,climate_type:city.climateType??null,city_size_band:city.sizeBand??null});
     }
   }

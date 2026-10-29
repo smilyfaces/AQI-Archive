@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bootstrapDifference, benjaminiHochberg, correlation, descriptiveSummary, deriveFeatures, kruskalWallis, mannKendall, mannWhitney, oneWayAnova, prepareDataset, rowsForScope, scopedCorrelation, summarize, timeTrend, welchTTest, wilcoxonSignedRank, wilsonInterval, type AnalysisScope } from "@/lib/statistics";
+import { bootstrapDifference, benjaminiHochberg, cityAdjustedCorrelation, correlation, descriptiveSummary, deriveFeatures, dunnPostHoc, kruskalWallis, linearRegression, mannKendall, mannWhitney, multipleWeatherRegression, oneWayAnova, prepareDataset, randomEffectsMetaAnalysis, rowsForScope, scopedCorrelation, summarize, timeTrend, welchTTest, wilcoxonSignedRank, wilsonInterval, type AnalysisScope } from "@/lib/statistics";
 import { getManualReadings, manualSeedValues } from "@/lib/manual-data";
 import reference from "@/lib/statistics-reference.json";
 
@@ -42,6 +42,12 @@ describe("statistics calculations", () => {
     expect(fit.value?.r).toBeCloseTo(reference.pearson.r,12);
     expect(fit.value?.pValue).toBeCloseTo(reference.pearson.pValue,8);
     expect(scopedCorrelation(x,y,columbiaScope,"spearman").value?.r).toBeCloseTo(reference.spearman.rho,12);
+    const regression=linearRegression(x,y,columbiaScope);
+    expect(regression.value?.slope).toBeCloseTo(reference.linearRegression.slope,12);
+    expect(regression.value?.intercept).toBeCloseTo(reference.linearRegression.intercept,12);
+    expect(regression.value?.rSquared).toBeCloseTo(reference.linearRegression.rSquared,12);
+    expect(regression.value?.ci95[0]).toBeCloseTo(reference.linearRegression.slopeCi95[0],9);
+    expect(regression.value?.ci95[1]).toBeCloseTo(reference.linearRegression.slopeCi95[1],9);
     const welch=welchTTest(a,b,columbiaScope);
     expect(welch.value?.pValue).toBeCloseTo(reference.welchT.pValue,8);
     expect(mannWhitney(a,b,columbiaScope).value?.u).toBe(reference.mannWhitney.u);
@@ -49,6 +55,7 @@ describe("statistics calculations", () => {
     const kw=kruskalWallis([a,b,x],columbiaScope);
     expect(kw.value?.h).toBeCloseTo(reference.kruskalWallis.h,8);
     expect(kw.value?.pValue).toBeCloseTo(reference.kruskalWallis.pValue,8);
+    expect(dunnPostHoc([{label:"a",values:a},{label:"b",values:b},{label:"x",values:x}],columbiaScope,1).status).toBe("suppressed");
     expect(wilcoxonSignedRank(paired,pairedB,columbiaScope).value?.pValue).toBeCloseTo(reference.wilcoxon.pValue,2);
     expect(bootstrapDifference(a,b,columbiaScope,reference.provenance.seed).value?.ci95[0]).toBeCloseTo(reference.bootstrapDifference.ci95[0],12);
     expect(bootstrapDifference(a,b,columbiaScope,reference.provenance.seed).value?.ci95[1]).toBeCloseTo(reference.bootstrapDifference.ci95[1],12);
@@ -57,6 +64,28 @@ describe("statistics calculations", () => {
     expect(wilson.value?.probability).toBe(reference.wilson.probability);
     expect(wilson.value?.ci95[0]).toBeCloseTo(reference.wilson.ci95[0],12);
     expect(wilson.value?.ci95[1]).toBeCloseTo(reference.wilson.ci95[1],12);
+  });
+
+  it("uses city-cluster resampling and random-effects estimates for pooled relationships", () => {
+    const readings=Array.from({length:5},(_,city)=>Array.from({length:12},(_,index)=>({city_id:`c${city}`,recorded_at:new Date(Date.UTC(2026,0,1,index)).toISOString(),temperature_c:city*20+index,aqi:city*100-index} as ReturnType<typeof getManualReadings>[number]))).flat();
+    const result=cityAdjustedCorrelation(readings,"temperature_c","aqi",{kind:"global"});
+    expect(result.status).toBe("ok");
+    expect(result.value?.disagrees).toBe(true);
+    expect(result.method).toContain("city-cluster bootstrap");
+    const pooled=randomEffectsMetaAnalysis([{slope:1,standardError:.2},{slope:1.2,standardError:.3},{slope:.9,standardError:.25}],{kind:"global"});
+    expect(pooled.status).toBe("ok");
+    expect(pooled.value?.iSquared).toBeGreaterThanOrEqual(0);
+    expect(pooled.value?.ci95[0]).toBeLessThan(pooled.value!.slope);
+  });
+
+  it("locks multivariable models below 100 complete rows", () => {
+    const rows=Array.from({length:120},(_,index)=>{const temperature=15+(index*17%300)/10,humidity=20+(index*37%75),wind=.5+(index*19%120)/10,cloud=(index*53)%101;return{city_id:"columbia",recorded_at:new Date(Date.UTC(2026,0,1,index)).toISOString(),source:"automated" as const,aqi:20+temperature*.5+humidity*.1-wind*.2,temperature_c:temperature,dewpoint_c:null,relative_humidity:humidity,cloud_coverage_pct:cloud,cloud_coverage_label:"Few",precipitation_last_hour_mm:index%7===0?1:0,precipitation_3h_mm:null,precipitation_6h_mm:null,precipitation_type:index%7===0?"rain":"none",text_description:null,wind_speed_ms:wind,wind_direction_deg:180,wind_gust_ms:null,barometric_pressure_pa:99500+(index*71%5000),sea_level_pressure_pa:null,visibility_m:10000,heat_index_c:null,wind_chill_c:null,weather_station_id:null,weather_observed_at:null,aqi_category:"Good",primary_pollutant:"PM2.5",pm25:10+index*.2,pm10:null,ozone:null,no2:null,so2:null,co:null,aqi_source_site:null} as ReturnType<typeof getManualReadings>[number];});
+    const features=deriveFeatures(rows,[{id:"columbia",timezone:"America/New_York",lat:34,lon:-81}],columbiaScope);
+    expect(multipleWeatherRegression(features.slice(0,99),"aqi",columbiaScope).status).toBe("insufficient");
+    const model=multipleWeatherRegression(features,"aqi",columbiaScope);
+    expect(model.status).toBe("ok");
+    expect(model.value?.n).toBeGreaterThanOrEqual(100);
+    expect(Number.isFinite(model.value?.adjustedRSquared)).toBe(true);
   });
 
   it("derives local weather bins, wind sectors, pressure deltas, and rain context", () => {
