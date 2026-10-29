@@ -174,7 +174,7 @@ async function airData(city: City, hour: Date, key: string) {
   for (const item of concentrations) {
     const param = paramField[item.Parameter.toUpperCase()];
     const value = num(item.Value);
-    if (!param || value === null || num(item.Latitude)===null || num(item.Longitude)===null) continue;
+    if (!param || value === null || value < 0 || num(item.Latitude)===null || num(item.Longitude)===null) continue;
     const distance=distanceKm(city.lat,city.lon,item.Latitude!,item.Longitude!);
     if(distance>AIR_QUALITY_SEARCH_RADII_KM.at(-1)!)continue;
     const unit = (item.Unit ?? "").toUpperCase();
@@ -182,6 +182,7 @@ async function airData(city: City, hour: Date, key: string) {
     if (unit.includes("PPB")) normalized = value * (param === "ozone" ? 1.96 : param === "no2" ? 1.88 : param === "so2" ? 2.62 : 1);
     else if (unit.includes("PPM") && param === "co") normalized = value * 1.146;
     else if ((unit.includes("MG/M3") || unit.includes("MG/M^3")) && param !== "co") normalized = value * 1000;
+    if (!Number.isFinite(normalized) || normalized < 0) continue;
     concentrationMeasurements.push({parameter:param,value:normalized,distanceKm:distance,siteName:item.SiteName??item.FullAQSCode});
   }
   const concentrationAverages=averageAtNearestRadius(concentrationMeasurements);
@@ -214,13 +215,14 @@ async function openAqFallback(city: City, hour: Date, key: string, missing: stri
       try {
         const query = new URLSearchParams({ datetime_from: hour.toISOString(), datetime_to: new Date(hour.getTime()+2*60*60*1000).toISOString(), limit:"100" });
         const result = openAqMeasurementsSchema.parse(await openAqJson<unknown>(`https://api.openaq.org/v3/sensors/${sensor.id}/measurements?${query}`, { headers: { "X-API-Key": key } }));
-        const valid = result.results.filter(row => row.value !== null && row.period?.datetimeFrom?.utc && Math.abs(Date.parse(row.period.datetimeFrom.utc)-hour.getTime()) <= 2*60*60*1000);
+        const valid = result.results.filter(row => row.value !== null && row.value >= 0 && row.period?.datetimeFrom?.utc && Math.abs(Date.parse(row.period.datetimeFrom.utc)-hour.getTime()) <= 2*60*60*1000);
         if (!valid.length) continue;
         let value = valid.reduce((sum, row) => sum + row.value!, 0) / valid.length;
         const unit = valid[0].parameter.units.toLowerCase();
         if (unit === "ppb") value *= field === "ozone" ? 1.96 : field === "no2" ? 1.88 : field === "so2" ? 2.62 : 1;
         if (unit === "ppm" && field === "co") value *= 1.146;
         if (unit === "mg/m³" && field !== "co") value *= 1000;
+        if (!Number.isFinite(value) || value < 0) continue;
         out[field] = value;
         break;
       } catch (error) {
@@ -286,6 +288,9 @@ Deno.serve(async (request: Request) => {
       if (!weather && !air) { counts.failed++; return; }
       const { raw_weather, raw_aqi, raw_concentrations, ...weatherFields } = weather ?? {};
       const airFields = { ...(air ?? {}) };
+      for (const field of ["pm25", "pm10", "ozone", "no2", "so2", "co"] as const) {
+        if (typeof airFields[field] === "number" && (!Number.isFinite(airFields[field]) || airFields[field]! < 0)) airFields[field] = null;
+      }
       delete airFields.raw_aqi;
       delete airFields.raw_concentrations;
       delete airFields.source_errors;
