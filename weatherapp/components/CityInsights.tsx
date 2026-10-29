@@ -61,7 +61,7 @@ export function CityInsights({ readings, timezone, now, title = "Statistics and 
     const result=correlation(visible.map(row=>metricValue(row,x.key)),visible.map(row=>metricValue(row,y.key)),correlationMethod);
     return {key:y.key,r:result.r,n:result.n,suppressed:result.suppressed};
   })}));
-  const dataQuality=NUMERIC_METRICS.map(item=>({label:item.label,missing:visible.length?Math.round(visible.filter(row=>metricValue(row,item.key)===null).length/visible.length*100):null}));
+  const dataQuality=NUMERIC_METRICS.map(item=>({key:item.key,label:item.label,missing:visible.length?Math.round(visible.filter(row=>metricValue(row,item.key)===null).length/visible.length*100):null}));
   const dateStart=visible[0]?.recorded_at,dateEnd=visible.at(-1)?.recorded_at;
   const toggleTable=(key:string)=>setTableView(current=>({...current,[key]:!current[key]}));
   const chartRows=visible.filter(row=>metricValue(row,metric)!==null).map(row=>({timestamp:Date.parse(row.recorded_at),value:metricValue(row,metric),recorded_at:row.recorded_at}));
@@ -107,7 +107,7 @@ export function CityInsights({ readings, timezone, now, title = "Statistics and 
         <div className="categorical-grid"><CategoryDistribution title="AQI category" values={visible.map(row=>row.aqi_category)}/><CategoryDistribution title="Primary pollutant" values={visible.map(row=>row.primary_pollutant)}/><CategoryDistribution title="Precipitation type" values={visible.map(row=>row.precipitation_type)}/><CategoryDistribution title="Cloud coverage" values={visible.map(row=>row.cloud_coverage_label)}/></div>
       </section>
 
-      <section className="chart-panel span-12" aria-labelledby="quality-heading"><div className="chart-heading"><div><h3 id="quality-heading">Data quality</h3><p>Coverage for the selected time range.</p></div></div><div className="quality-stats"><div><span>Records</span><strong>{visible.length}</strong></div><div><span>Date range</span><strong>{dateStart?`${getLocalDate(dateStart,timezone)} – ${getLocalDate(dateEnd!,timezone)}`:"N/A"}</strong></div><div><span>Manual entries</span><strong>{visible.filter(row=>row.source==="manual").length}</strong></div><div><span>Automated entries</span><strong>{visible.filter(row=>row.source==="automated").length}</strong></div></div><div className="missing-grid">{dataQuality.map(item=><div key={item.label}><span>{item.label}</span><strong>{item.missing===null?"N/A":`${item.missing}% N/A`}</strong><span className="missing-track"><i style={{width:`${item.missing??0}%`}}/></span></div>)}</div></section>
+      <section className="chart-panel span-12" aria-labelledby="quality-heading"><div className="chart-heading"><div><h3 id="quality-heading">Data quality</h3><p>Coverage for the selected time range.</p></div></div><div className="quality-stats"><div><span>Records</span><strong>{visible.length}</strong></div><div><span>Date range</span><strong>{dateStart?`${getLocalDate(dateStart,timezone)} – ${getLocalDate(dateEnd!,timezone)}`:"N/A"}</strong></div><div><span>Manual entries</span><strong>{visible.filter(row=>row.source==="manual").length}</strong></div><div><span>Automated entries</span><strong>{visible.filter(row=>row.source==="automated").length}</strong></div></div><div className="missing-grid">{dataQuality.map(item=><div key={item.key}><span>{item.label}{item.key==="cloud_coverage_eighths"?" (eighths)":""}</span><strong>{item.missing===null?"N/A":`${item.missing}% N/A`}</strong><span className="missing-track"><i style={{width:`${item.missing??0}%`}}/></span></div>)}</div></section>
     </div>
   </div>;
 }
