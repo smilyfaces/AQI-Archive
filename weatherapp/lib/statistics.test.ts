@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bootstrapDifference, benjaminiHochberg, cityAdjustedCorrelation, correlation, descriptiveSummary, deriveFeatures, dunnPostHoc, kruskalWallis, linearRegression, mannKendall, mannWhitney, multipleWeatherRegression, oneWayAnova, prepareDataset, randomEffectsMetaAnalysis, rankCitiesByAqi, rowsForScope, scopedCorrelation, summarize, timeTrend, welchTTest, wilcoxonSignedRank, wilsonInterval, type AnalysisScope } from "@/lib/statistics";
+import { binnedGrid, bootstrapDifference, benjaminiHochberg, cityAdjustedCorrelation, compareCondition, correlation, descriptiveSummary, deriveFeatures, dunnPostHoc, kruskalWallis, linearRegression, mannKendall, mannWhitney, multipleWeatherRegression, oneWayAnova, prepareDataset, randomEffectsMetaAnalysis, rankCitiesByAqi, rowsForScope, scopedCorrelation, summarize, timeTrend, welchTTest, wilcoxonSignedRank, wilsonInterval, type AnalysisScope } from "@/lib/statistics";
 import { getManualReadings, manualSeedValues } from "@/lib/manual-data";
 import reference from "@/lib/statistics-reference.json";
 
@@ -32,6 +32,9 @@ describe("statistics calculations", () => {
     expect(mannKendall([1,2,3,4,5,6,7,8,9,10], columbiaScope).value?.pValue).toBeLessThan(.05);
     expect(wilsonInterval(10, 20, columbiaScope).value?.probability).toBe(.5);
     expect(wilsonInterval(2, 19, columbiaScope).status).toBe("insufficient");
+    const scenario=compareCondition(Array.from({length:16},(_,index)=>index<8?50+index:20+index),Array.from({length:16},(_,index)=>index<8),columbiaScope);
+    expect(scenario).toMatchObject({status:"ok",n:16,value:{inside:{n:8},outside:{n:8},difference:22}});
+    expect(compareCondition([1,2,3,4,5,6,7,8,9,10],[true,true,true,true,false,false,false,false,false,false],columbiaScope).status).toBe("insufficient");
   });
 
   it("matches SciPy and statsmodels reference fixtures", () => {
@@ -115,6 +118,8 @@ describe("statistics calculations", () => {
     expect(atFour.hours_since_rain).toBe(1);
     expect(atTwentyFour.rain_last_24h_mm).toBe(2);
     expect(atFour.pressure_change_3h).toBe(30);
+    expect(binnedGrid(features,"temp_bin","wind_bin","aqi",columbiaScope).value?.[0]).toMatchObject({n:25,mean:32,suppressed:false});
+    expect(binnedGrid(features.slice(0,4),"temp_bin","wind_bin","aqi",columbiaScope).value?.[0]).toMatchObject({n:4,mean:null,suppressed:true});
   });
 
   it("matches hand-calculated summary values and excludes nulls", () => {
