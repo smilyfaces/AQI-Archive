@@ -10,6 +10,11 @@ const periodOptions = [{key:"24h",label:"24 hours",duration:24*60*60*1000},{key:
 const fmt = (value:number|null|undefined,digits=2) => value===null||value===undefined||!Number.isFinite(value) ? "N/A" : Number(value.toFixed(digits)).toLocaleString();
 const metricLabel = (key:string) => NUMERIC_METRICS.find(item=>item.key===key)?.label ?? key;
 const getLocalDate=(value:string,timezone:string)=>new Intl.DateTimeFormat("en-US",{timeZone:timezone,month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(new Date(value));
+const formatChartDate = (value: unknown) => {
+  if (value === null || value === undefined || value === "") return "";
+  const timestamp = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(timestamp) ? format(new Date(timestamp), "MMM d") : "";
+};
 
 export function CityInsights({ readings, timezone, now, title = "Statistics and archive insights" }: { readings: Reading[]; timezone: string; now: number; title?: string }) {
   const [period,setPeriod]=useState<(typeof periodOptions)[number]["key"]>("all");
@@ -46,6 +51,12 @@ export function CityInsights({ readings, timezone, now, title = "Statistics and 
   const trend=timeTrend(visible,"aqi");
   const rolling24=rollingAverages(visible,"aqi",24*60*60*1000);
   const rolling7d=rollingAverages(visible,"aqi",7*24*60*60*1000);
+  const rollingRows = useMemo(() => {
+    const rows = new Map<number, { timestamp: number; short?: number; long?: number }>();
+    for (const row of rolling24) rows.set(row.timestamp, { timestamp: row.timestamp, short: row.mean });
+    for (const row of rolling7d) rows.set(row.timestamp, { ...rows.get(row.timestamp), timestamp: row.timestamp, long: row.mean });
+    return [...rows.values()].sort((a, b) => a.timestamp - b.timestamp);
+  }, [rolling24, rolling7d]);
   const matrix=NUMERIC_METRICS.map(x=>({key:x.key,label:x.label,cells:NUMERIC_METRICS.map(y=>{
     const result=correlation(visible.map(row=>metricValue(row,x.key)),visible.map(row=>metricValue(row,y.key)),correlationMethod);
     return {key:y.key,r:result.r,n:result.n,suppressed:result.suppressed};
@@ -88,7 +99,7 @@ export function CityInsights({ readings, timezone, now, title = "Statistics and 
       </section>
 
       <section className="chart-panel span-6" aria-labelledby="rolling-heading"><div className="chart-heading"><div><h3 id="rolling-heading">Rolling AQI averages</h3><p>Windowed over real timestamps; no uniform spacing is assumed.</p></div></div>
-        {selectedSummary.n>=5?<><div className="rolling-legend"><span><i className="legend-dot"/>24 hour window</span><span><i className="legend-dot seven-day"/>7 day window</span></div><div className="chart-frame"><ResponsiveContainer width="100%" height="100%"><LineChart data={rolling24.map((row,index)=>({timestamp:row.timestamp,short:row.mean,long:rolling7d[index]?.mean}))} margin={{top:8,right:12,bottom:8,left:4}}><CartesianGrid stroke="var(--border)" strokeDasharray="3 3"/><XAxis dataKey="timestamp" type="number" scale="time" domain={['dataMin','dataMax']} tickFormatter={value=>format(new Date(value),"MMM d")} stroke="var(--ink-muted)"/><YAxis width={42} stroke="var(--ink-muted)"/><Tooltip labelFormatter={value=>getLocalDate(new Date(Number(value)).toISOString(),timezone)}/><Line dataKey="short" name="24 hour" stroke="var(--blue-600)" dot={false} connectNulls={false}/><Line dataKey="long" name="7 day" stroke="var(--success)" dot={false} connectNulls={false}/></LineChart></ResponsiveContainer></div><p className="chart-alt">Rolling values are calculated from readings that actually fall within each time window.</p></>:<Insufficient n={selectedSummary.n} need={5}/>}
+        {selectedSummary.n>=5?<><div className="rolling-legend"><span><i className="legend-dot"/>24 hour window</span><span><i className="legend-dot seven-day"/>7 day window</span></div><div className="chart-frame"><ResponsiveContainer width="100%" height="100%"><LineChart data={rollingRows} margin={{top:8,right:12,bottom:8,left:4}}><CartesianGrid stroke="var(--border)" strokeDasharray="3 3"/><XAxis dataKey="timestamp" type="number" scale="time" domain={['dataMin','dataMax']} tickFormatter={formatChartDate} stroke="var(--ink-muted)"/><YAxis width={42} stroke="var(--ink-muted)"/><Tooltip labelFormatter={value=>formatChartDate(value)===""?"":getLocalDate(new Date(Number(value)).toISOString(),timezone)}/><Line dataKey="short" name="24 hour" stroke="var(--blue-600)" dot={false} connectNulls={false}/><Line dataKey="long" name="7 day" stroke="var(--success)" dot={false} connectNulls={false}/></LineChart></ResponsiveContainer></div><p className="chart-alt">Rolling values are calculated from readings that actually fall within each time window.</p></>:<Insufficient n={selectedSummary.n} need={5}/>}
       </section>
 
       <section className="chart-panel span-12" aria-labelledby="groups-heading"><div className="chart-heading"><div><h3 id="groups-heading">AQI group comparisons</h3><p>Group summaries with a one-way ANOVA when sample size permits.</p></div><label className="compact-select"><span className="sr-only">Group AQI by</span><select value={groupMode} onChange={event=>setGroupMode(event.target.value as typeof groupMode)}><option value="pollutant">Primary pollutant</option><option value="precipitation">Precipitation type</option><option value="cloud">Cloud coverage</option></select></label></div>
