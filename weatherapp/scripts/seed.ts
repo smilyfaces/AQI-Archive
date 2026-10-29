@@ -69,6 +69,16 @@ const cityRows = [
 ] as const;
 
 const category = (aqi: number) => aqi <= 50 ? "Good" : aqi <= 100 ? "Moderate" : aqi <= 150 ? "Unhealthy for Sensitive Groups" : aqi <= 200 ? "Unhealthy" : aqi <= 300 ? "Very Unhealthy" : "Hazardous";
+function regionForState(state:string) {
+  if (["AK","HI"].includes(state)) return "Non-contiguous";
+  if (["CT","ME","MA","NH","RI","VT","NJ","NY","PA"].includes(state)) return "Northeast";
+  if (["DE","MD","DC","VA","WV","KY","NC","SC","GA","FL","AL","MS","TN","AR","LA"].includes(state)) return "Southeast";
+  if (["IL","IN","MI","OH","WI","IA","KS","MN","MO","NE","ND","SD"].includes(state)) return "Midwest";
+  if (["AZ","NM","OK","TX"].includes(state)) return "Southwest";
+  if (["CA","OR","WA"].includes(state)) return "Pacific";
+  if (["CO","ID","MT","NV","UT","WY"].includes(state)) return "West";
+  return null;
+}
 
 async function main() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -76,7 +86,7 @@ async function main() {
   if (!url || !key) throw new Error("Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY before seeding.");
   const supabase = createClient(url, key, { auth: { persistSession: false } });
   const cities = cityRows.map(([slug,name,state,lat,lon,timezone]) => ({
-    slug,name,state,lat,lon,timezone,
+    slug,name,state,lat,lon,timezone,region:regionForState(state),
     // Resolve actual station/monitor IDs at ingest time instead of baking in an unverified guess.
     nws_station_id: null,
     airnow_area: null,

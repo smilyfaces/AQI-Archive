@@ -46,9 +46,15 @@ export type City = CitySummary & {
   lon?: number;
   timezone?: string;
   data_source_note?: string | null;
+  region?: string | null;
+  climate_type?: string | null;
+  population?: number | null;
+  size_band?: string | null;
   stale?: boolean;
   latest: Reading | null;
 };
+export type AnalysisCity = { id:string; slug:string; name:string; state:string; timezone:string; lat:number; lon:number; region:string|null; climateType:string|null; sizeBand:string|null; population:number|null };
+type CityMetadataRow = { id:string; slug:string; name:string; state:string; timezone:string; lat:number; lon:number; data_source_note?:string|null; region?:string|null; climate_type?:string|null; population?:number|null; size_band?:string|null };
 
 const emptyReading = (recorded_at: string, source: "manual" | "automated"): Reading => ({
   recorded_at, source, aqi: null, aqi_category: null, primary_pollutant: null,
@@ -76,14 +82,17 @@ function publicDb() {
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   return url && anon ? createClient(url, anon, { auth: { persistSession: false } }) : null;
 }
+const metadataColumnsMissing=(error:{code?:string}|null|undefined)=>error?.code==="PGRST204";
 
 export async function getCities(): Promise<{ cities: City[]; error: string | null; localFallback: boolean }> {
   const db = publicDb();
   if (!db) return { cities: localCities(), error: null, localFallback: true };
-  const [{ data: cities, error: cityError }, { data: readings, error: readingError }] = await Promise.all([
-    db.from("cities").select("id,slug,name,state,lat,lon,timezone,data_source_note").eq("is_active", true).order("name"),
+  const [metadataCityResult,readingResult]=await Promise.all([
+    db.from("cities").select("id,slug,name,state,lat,lon,timezone,data_source_note,region,climate_type,population,size_band").eq("is_active", true).order("name"),
     db.from("latest_readings").select("*").limit(200),
   ]);
+  const cityResult=metadataColumnsMissing(metadataCityResult.error)?await db.from("cities").select("id,slug,name,state,lat,lon,timezone,data_source_note").eq("is_active",true).order("name"):metadataCityResult;
+  const {data:cities,error:cityError}=cityResult,{data:readings,error:readingError}=readingResult;
   if (cityError?.code==="PGRST205" || readingError?.code==="PGRST205") return { cities: localCities(), error: null, localFallback: true };
   if (cityError || readingError || !cities) return { cities: [], error: cityError?.message ?? readingError?.message ?? "Could not load city readings.", localFallback: false };
   const latestBySlug = new Map((readings ?? []).map(row => [row.slug as string, row as Reading]));
@@ -93,21 +102,33 @@ export async function getCities(): Promise<{ cities: City[]; error: string | nul
   }), error: null, localFallback: false };
 }
 
-export async function getAllReadings(): Promise<{ readings: Reading[]; error: string | null; localFallback: boolean }> {
+export async function getAllReadings(): Promise<{ readings: Reading[]; cities:AnalysisCity[]; error: string | null; localFallback: boolean; asOf:number }> {
   const db = publicDb();
-  if (!db) return { readings: cityCatalog.flatMap(city => getManualReadings(city.slug)), error: null, localFallback: true };
+  const manualCityContexts:AnalysisCity[] = [
+    {id:"columbia-sc",slug:"columbia-sc",name:"Columbia",state:"SC",timezone:"America/New_York",lat:34.0007,lon:-81.0348,region:"Southeast",climateType:null,sizeBand:null,population:null},
+    {id:"oakland-ca",slug:"oakland-ca",name:"Oakland",state:"CA",timezone:"America/Los_Angeles",lat:37.8044,lon:-122.2712,region:"Pacific",climateType:null,sizeBand:null,population:null},
+    {id:"lamont-ok",slug:"lamont-ok",name:"Lamont",state:"OK",timezone:"America/Chicago",lat:36.6778,lon:-97.4837,region:"Southwest",climateType:null,sizeBand:null,population:null},
+  ];
+  const manualReadings=()=>cityCatalog.flatMap(city=>getManualReadings(city.slug).map(row=>({...row,city_id:city.slug})));
+  if (!db) return { readings: manualReadings(), cities:manualCityContexts, error: null, localFallback: true, asOf:Date.now() };
 
   const readings: Reading[] = [];
   const pageSize = 1000;
+  const metadataCityResult=await db.from("cities").select("id,slug,name,state,timezone,lat,lon,region,climate_type,population,size_band").eq("is_active",true);
+  const cityResult=metadataColumnsMissing(metadataCityResult.error)?await db.from("cities").select("id,slug,name,state,timezone,lat,lon").eq("is_active",true):metadataCityResult;
+  const {data:cityRows,error:cityError}=cityResult;
+  if(cityError?.code==="PGRST205")return {readings:manualReadings(),cities:manualCityContexts,error:null,localFallback:true,asOf:Date.now()};
+  if(cityError)return {readings:[],cities:[],error:cityError.message,localFallback:false,asOf:Date.now()};
+  const cities:AnalysisCity[]=((cityRows??[]) as CityMetadataRow[]).map((city)=>({id:city.id,slug:city.slug,name:city.name,state:city.state,timezone:city.timezone,lat:city.lat,lon:city.lon,region:city.region??null,climateType:city.climate_type??null,sizeBand:city.size_band??null,population:city.population??null}));
   for (let offset = 0; ; offset += pageSize) {
     const { data, error } = await db.from("readings").select("*").order("recorded_at", { ascending: true }).range(offset, offset + pageSize - 1);
-    if (error?.code === "PGRST205") return { readings: cityCatalog.flatMap(city => getManualReadings(city.slug)), error: null, localFallback: true };
-    if (error) return { readings: [], error: error.message, localFallback: false };
+    if (error?.code === "PGRST205") return { readings: manualReadings(), cities:manualCityContexts, error: null, localFallback: true, asOf:Date.now() };
+    if (error) return { readings: [], cities:[], error: error.message, localFallback: false, asOf:Date.now() };
     const batch = (data ?? []) as Reading[];
     readings.push(...batch);
     if (batch.length < pageSize) break;
   }
-  return { readings, error: null, localFallback: false };
+  return { readings, cities, error: null, localFallback: false, asOf:Date.now() };
 }
 
 export async function getCity(slug: string): Promise<{ city: City | null; readings: Reading[]; error: string | null; localFallback: boolean; asOf:number }> {
@@ -118,7 +139,9 @@ export async function getCity(slug: string): Promise<{ city: City | null; readin
     const latest = readings.at(-1) ?? null;
     return { city: city ? { ...city, latest, stale: latest ? Date.now() - new Date(latest.recorded_at).getTime() > 3*60*60*1000 : false } : null, readings, error: null, localFallback: true, asOf:Date.now() };
   }
-  const { data: row, error: cityError } = await db.from("cities").select("id,slug,name,state,lat,lon,timezone,data_source_note").eq("slug", slug).maybeSingle();
+  const metadataCityResult=await db.from("cities").select("id,slug,name,state,lat,lon,timezone,data_source_note,region,climate_type,population,size_band").eq("slug", slug).maybeSingle();
+  const cityResult=metadataColumnsMissing(metadataCityResult.error)?await db.from("cities").select("id,slug,name,state,lat,lon,timezone,data_source_note").eq("slug",slug).maybeSingle():metadataCityResult;
+  const {data:row,error:cityError}=cityResult;
   if (cityError?.code==="PGRST205") {
     const city=localCity(slug);
     const readings=city?getManualReadings(slug):[];

@@ -1,8 +1,83 @@
 import { describe, expect, it } from "vitest";
-import { correlation, oneWayAnova, summarize, timeTrend } from "@/lib/statistics";
+import { bootstrapDifference, benjaminiHochberg, correlation, descriptiveSummary, deriveFeatures, kruskalWallis, mannKendall, mannWhitney, oneWayAnova, prepareDataset, rowsForScope, scopedCorrelation, summarize, timeTrend, welchTTest, wilcoxonSignedRank, wilsonInterval, type AnalysisScope } from "@/lib/statistics";
 import { getManualReadings, manualSeedValues } from "@/lib/manual-data";
+import reference from "@/lib/statistics-reference.json";
 
 describe("statistics calculations", () => {
+  const columbiaScope: AnalysisScope = { kind: "city", cityId: "columbia" };
+
+  it("enforces scoped descriptive spread minimums and carries method metadata", () => {
+    const result = descriptiveSummary([1, 2, 3, 4], columbiaScope);
+    expect(result).toMatchObject({ n: 4, method: "descriptive summary", status: "ok", mean: 2.5, sd: null, q05: null });
+    expect(() => descriptiveSummary([1], undefined as unknown as AnalysisScope)).toThrow(/scope/i);
+    expect(descriptiveSummary([], columbiaScope)).toMatchObject({ n: 0, status: "insufficient", mean: null });
+  });
+
+  it("requires explicit scope filters and excludes manual rows from weather datasets", () => {
+    const automated = { city_id:"columbia", recorded_at:"2026-06-01T12:00:00.000Z", source:"automated" as const } as ReturnType<typeof getManualReadings>[number];
+    const manual = { ...automated, source:"manual" as const, recorded_at:"2026-06-01T13:00:00.000Z" };
+    expect(rowsForScope([automated,manual],columbiaScope)).toEqual([automated,manual]);
+    expect(rowsForScope([automated,{...automated,city_id:"oakland"}],{kind:"global",cityIds:["columbia"]})).toHaveLength(1);
+    const result=prepareDataset([automated,manual],columbiaScope,{dataset:"automated",range:"all",includeManualAqi:true,target:"aqi",now:Date.parse("2026-06-02T00:00:00Z")});
+    expect(result).toMatchObject({n:1,method:"automated dataset · all range",rows:[automated]});
+    expect(prepareDataset([automated,manual],columbiaScope,{dataset:"all",range:"all",includeManualAqi:true,target:"aqi",now:Date.parse("2026-06-02T00:00:00Z")}).n).toBe(2);
+    expect(prepareDataset([automated,manual],columbiaScope,{dataset:"all",range:"all",includeManualAqi:true,target:"ozone",now:Date.parse("2026-06-02T00:00:00Z")}).n).toBe(1);
+  });
+
+  it("computes robust group and trend tests and a Wilson interval", () => {
+    const groupA = [1, 2, 2, 3, 3, 4, 4, 5, 5, 6];
+    const groupB = [12, 13, 13, 14, 14, 15, 15, 16, 16, 17];
+    expect(mannWhitney(groupA, groupB, columbiaScope)).toMatchObject({ status: "ok", method: "Mann–Whitney U with seeded bootstrap CI", n: 20, value: { pValue: expect.any(Number), effectSize: expect.any(Number) } });
+    expect(mannWhitney(groupA.slice(0, 7), groupB, columbiaScope)).toMatchObject({ status: "insufficient", required: 8 });
+    expect(mannKendall([1,2,3,4,5,6,7,8,9,10], columbiaScope).value?.pValue).toBeLessThan(.05);
+    expect(wilsonInterval(10, 20, columbiaScope).value?.probability).toBe(.5);
+    expect(wilsonInterval(2, 19, columbiaScope).status).toBe("insufficient");
+  });
+
+  it("matches SciPy and statsmodels reference fixtures", () => {
+    const a=[1.2,2,2.5,3.1,4,4.4,5,6,7,8],b=[2,2.6,3.3,4.1,4.9,5.7,6.3,7.1,8,9.4];
+    const x=[20,22,25,27,30,33,35,38,40,43],y=[12,11,17,16,20,19,24,25,27,30];
+    const paired=[2.1,3.2,4,4.8,6,7.1,8.3,9,10.2,11.4],pairedB=[1.7,3.4,3.1,4.4,5,7.6,7,9.2,9.9,10.1];
+    const fit=scopedCorrelation(x,y,columbiaScope);
+    expect(fit.value?.r).toBeCloseTo(reference.pearson.r,12);
+    expect(fit.value?.pValue).toBeCloseTo(reference.pearson.pValue,8);
+    expect(scopedCorrelation(x,y,columbiaScope,"spearman").value?.r).toBeCloseTo(reference.spearman.rho,12);
+    const welch=welchTTest(a,b,columbiaScope);
+    expect(welch.value?.pValue).toBeCloseTo(reference.welchT.pValue,8);
+    expect(mannWhitney(a,b,columbiaScope).value?.u).toBe(reference.mannWhitney.u);
+    expect(mannWhitney(a,b,columbiaScope).value?.pValue).toBeCloseTo(reference.mannWhitney.pValue,2);
+    const kw=kruskalWallis([a,b,x],columbiaScope);
+    expect(kw.value?.h).toBeCloseTo(reference.kruskalWallis.h,8);
+    expect(kw.value?.pValue).toBeCloseTo(reference.kruskalWallis.pValue,8);
+    expect(wilcoxonSignedRank(paired,pairedB,columbiaScope).value?.pValue).toBeCloseTo(reference.wilcoxon.pValue,2);
+    expect(bootstrapDifference(a,b,columbiaScope,reference.provenance.seed).value?.ci95[0]).toBeCloseTo(reference.bootstrapDifference.ci95[0],12);
+    expect(bootstrapDifference(a,b,columbiaScope,reference.provenance.seed).value?.ci95[1]).toBeCloseTo(reference.bootstrapDifference.ci95[1],12);
+    expect(benjaminiHochberg(reference.benjaminiHochberg.pValues,columbiaScope).value?.adjusted).toEqual(reference.benjaminiHochberg.adjusted);
+    const wilson=wilsonInterval(reference.wilson.successes,reference.wilson.n,columbiaScope);
+    expect(wilson.value?.probability).toBe(reference.wilson.probability);
+    expect(wilson.value?.ci95[0]).toBeCloseTo(reference.wilson.ci95[0],12);
+    expect(wilson.value?.ci95[1]).toBeCloseTo(reference.wilson.ci95[1],12);
+  });
+
+  it("derives local weather bins, wind sectors, pressure deltas, and rain context", () => {
+    const rows = Array.from({ length: 25 }, (_, index) => ({
+      recorded_at: new Date(Date.UTC(2026, 5, 1, index)).toISOString(), source: "automated" as const,
+      city_id: "columbia", aqi: 20 + index, aqi_category: "Good", primary_pollutant: "PM2.5",
+      pm25: 5 + index, pm10: null, ozone: null, no2: null, so2: null, co: null,
+      temperature_c: 30, dewpoint_c: 18, relative_humidity: 55, cloud_coverage_pct: 5, cloud_coverage_label: "Clear",
+      precipitation_last_hour_mm: index === 3 ? 2 : 0, precipitation_3h_mm: null, precipitation_6h_mm: null,
+      precipitation_type: index === 3 ? "rain" : "none", text_description: null, wind_speed_ms: 0, wind_direction_deg: 90,
+      wind_gust_ms: null, barometric_pressure_pa: 101000 + index * 10, sea_level_pressure_pa: null, visibility_m: null,
+      heat_index_c: null, wind_chill_c: null, weather_station_id: null, weather_observed_at: null, aqi_source_site: null,
+    }));
+    const features = deriveFeatures(rows, [{ id:"columbia",timezone:"America/New_York",lat:34.0007,lon:-81.0348 }], columbiaScope);
+    const atThree=features[3],atFour=features[4],atTwentyFour=features[24];
+    expect(atThree).toMatchObject({ wind_dir_sector:"calm", precip_flag:true, temp_bin:"80–90°F", wind_bin:"calm (<1 m/s)" });
+    expect(atFour.hours_since_rain).toBe(1);
+    expect(atTwentyFour.rain_last_24h_mm).toBe(2);
+    expect(atFour.pressure_change_3h).toBe(30);
+  });
+
   it("matches hand-calculated summary values and excludes nulls", () => {
     const result = summarize([1,2,3,4,null,Number.NaN]);
     expect(result).toMatchObject({ n:4, mean:2.5, median:2.5, min:1, max:4, sd:Math.sqrt(5/3), variance:5/3, iqr:1.5, p05:1.15 });
