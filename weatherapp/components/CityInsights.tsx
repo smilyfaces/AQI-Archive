@@ -45,7 +45,7 @@ export function CityInsights({ readings, timezone, now, title = "Statistics and 
   const [distributionMetric,setDistributionMetric]=useState<MetricKey>("aqi");
   const [xMetric,setXMetric]=useState<MetricKey>("temperature_c");
   const [yMetric,setYMetric]=useState<MetricKey>("aqi");
-  const [groupMode,setGroupMode]=useState<"pollutant"|"precipitation"|"cloud">("pollutant");
+  const [groupMode,setGroupMode]=useState<"pollutant"|"precipitation"|"cloud"|"temperature"|"humidity">("pollutant");
   const [correlationMethod,setCorrelationMethod]=useState<"pearson"|"spearman">("pearson");
   const [tableView,setTableView]=useState<Record<string,boolean>>({});
   const selectedPeriod=periodOptions.find(item=>item.key===period)??periodOptions[3];
@@ -71,7 +71,15 @@ export function CityInsights({ readings, timezone, now, title = "Statistics and 
   const pearson=correlation(visible.map(row=>metricValue(row,xMetric)),visible.map(row=>metricValue(row,yMetric)));
   const anovaGroups=useMemo(()=>{
     const groups=new Map<string,number[]>();
-    for(const row of visible){const category=groupMode==="pollutant"?row.primary_pollutant:groupMode==="precipitation"?row.precipitation_type:row.cloud_coverage_label; if(category&&row.aqi!==null){const group=groups.get(category)??[];group.push(row.aqi);groups.set(category,group);}}
+    for(const row of visible){
+      let category:string|null=null;
+      if(groupMode==="pollutant")category=row.primary_pollutant;
+      else if(groupMode==="precipitation")category=row.precipitation_type;
+      else if(groupMode==="cloud")category=row.cloud_coverage_label;
+      else if(groupMode==="temperature"&&row.temperature_c!==null){const fahrenheit=row.temperature_c*9/5+32;category=fahrenheit<32?"<32°F":fahrenheit<50?"32–50°F":fahrenheit<65?"50–65°F":fahrenheit<80?"65–80°F":fahrenheit<90?"80–90°F":">90°F";}
+      else if(groupMode==="humidity"&&row.relative_humidity!==null){const humidity=row.relative_humidity;category=humidity<30?"<30%":humidity<50?"30–50%":humidity<70?"50–70%":humidity<90?"70–90%":">90%";}
+      if(category&&row.aqi!==null){const group=groups.get(category)??[];group.push(row.aqi);groups.set(category,group);}
+    }
     return [...groups].map(([label,values])=>({label,values,stats:summarize(values)}));
   },[visible,groupMode]);
   const anova=oneWayAnova(anovaGroups.map(group=>group.values));
@@ -131,7 +139,7 @@ export function CityInsights({ readings, timezone, now, title = "Statistics and 
         {selectedSummary.n>=5?<><div className="rolling-legend"><span><i className="legend-dot"/>24 hour window</span><span><i className="legend-dot seven-day"/>7 day window</span></div><div className="chart-frame"><ResponsiveContainer width="100%" height="100%"><LineChart data={rollingRows} margin={{top:8,right:12,bottom:8,left:4}}><CartesianGrid stroke="var(--border)" strokeDasharray="3 3"/><XAxis dataKey="timestamp" type="number" scale="time" domain={['dataMin','dataMax']} tickFormatter={formatChartDate} stroke="var(--ink-muted)"/><YAxis width={42} stroke="var(--ink-muted)"/><Tooltip labelFormatter={value=>formatChartDate(value)===""?"":getLocalDate(new Date(Number(value)).toISOString(),timezone)}/><Line dataKey="short" name="24 hour" stroke="var(--blue-600)" dot={false} connectNulls={false}/><Line dataKey="long" name="7 day" stroke="var(--success)" dot={false} connectNulls={false}/></LineChart></ResponsiveContainer></div><p className="chart-alt">Rolling values are calculated from readings that actually fall within each time window.</p></>:<Insufficient n={selectedSummary.n} need={5}/>}
       </section>
 
-      <section className="chart-panel span-12" aria-labelledby="groups-heading"><div className="chart-heading"><div><h3 id="groups-heading">AQI group comparisons</h3><p>Group summaries with a one-way ANOVA when sample size permits.</p></div><label className="compact-select"><span className="sr-only">Group AQI by</span><select value={groupMode} onChange={event=>setGroupMode(event.target.value as typeof groupMode)}><option value="pollutant">Primary pollutant</option><option value="precipitation">Precipitation type</option><option value="cloud">Cloud coverage</option></select></label></div>
+      <section className="chart-panel span-12" aria-labelledby="groups-heading"><div className="chart-heading"><div><h3 id="groups-heading">AQI group comparisons</h3><p>Compare AQI summaries across pollutant, precipitation, cloud, temperature, and humidity groups.</p></div><label className="compact-select"><span className="sr-only">Group AQI by</span><select value={groupMode} onChange={event=>setGroupMode(event.target.value as typeof groupMode)}><option value="pollutant">Primary pollutant</option><option value="precipitation">Precipitation type</option><option value="cloud">Cloud coverage</option><option value="temperature">Temperature range</option><option value="humidity">Relative humidity range</option></select></label></div>
         {anova.suppressed?<Insufficient n={anova.n} need={10}/>:<><div className="group-list">{anovaGroups.map(group=><div className="group-row" key={group.label}><strong>{group.label}</strong><span>n = {group.stats.n}</span><span>Mean AQI {fmt(group.stats.mean,1)}</span><span>Median {fmt(group.stats.median,1)}</span></div>)}</div><p className="chart-alt">ANOVA F = {fmt(anova.fStatistic,3)} · p = {fmt(anova.pValue,4)} · n = {anova.n}. This test describes group differences and does not establish cause.</p></>}
         <div className="categorical-grid"><CategoryDistribution title="AQI category" values={visible.map(row=>row.aqi_category)}/><CategoryDistribution title="Primary pollutant" values={visible.map(row=>row.primary_pollutant)}/><CategoryDistribution title="Precipitation type" values={visible.map(row=>row.precipitation_type)}/><CategoryDistribution title="Cloud coverage" values={visible.map(row=>row.cloud_coverage_label)}/></div>
       </section>
