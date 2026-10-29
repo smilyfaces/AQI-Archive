@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bootstrapDifference, benjaminiHochberg, cityAdjustedCorrelation, correlation, descriptiveSummary, deriveFeatures, dunnPostHoc, kruskalWallis, linearRegression, mannKendall, mannWhitney, multipleWeatherRegression, oneWayAnova, prepareDataset, randomEffectsMetaAnalysis, rowsForScope, scopedCorrelation, summarize, timeTrend, welchTTest, wilcoxonSignedRank, wilsonInterval, type AnalysisScope } from "@/lib/statistics";
+import { bootstrapDifference, benjaminiHochberg, cityAdjustedCorrelation, correlation, descriptiveSummary, deriveFeatures, dunnPostHoc, kruskalWallis, linearRegression, mannKendall, mannWhitney, multipleWeatherRegression, oneWayAnova, prepareDataset, randomEffectsMetaAnalysis, rankCitiesByAqi, rowsForScope, scopedCorrelation, summarize, timeTrend, welchTTest, wilcoxonSignedRank, wilsonInterval, type AnalysisScope } from "@/lib/statistics";
 import { getManualReadings, manualSeedValues } from "@/lib/manual-data";
 import reference from "@/lib/statistics-reference.json";
 
@@ -76,6 +76,16 @@ describe("statistics calculations", () => {
     expect(pooled.status).toBe("ok");
     expect(pooled.value?.iSquared).toBeGreaterThanOrEqual(0);
     expect(pooled.value?.ci95[0]).toBeLessThan(pooled.value!.slope);
+  });
+
+  it("ranks city-level AQI summaries and separates cities below the coverage minimum", () => {
+    const readings=Array.from({length:10},(_,index)=>({city_id:"a",aqi:30+index} as ReturnType<typeof getManualReadings>[number]))
+      .concat(Array.from({length:9},(_,index)=>({city_id:"b",aqi:10+index} as ReturnType<typeof getManualReadings>[number])));
+    const result=rankCitiesByAqi(readings,[{id:"a",slug:"alpha",name:"Alpha",state:"AA"},{id:"b",slug:"beta",name:"Beta",state:"BB"},{id:"c",slug:"gamma",name:"Gamma",state:"CC"}],{kind:"global"});
+    expect(result.status).toBe("ok");
+    expect(result.value?.map(city=>[city.slug,city.eligible])).toEqual([["alpha",true],["beta",false],["gamma",false]]);
+    expect(result.value?.[0]).toMatchObject({n:10,mean:34.5,median:34.5,above100Percent:0});
+    expect(rankCitiesByAqi(readings,[{id:"a",name:"Alpha",state:"AA"}],{kind:"global",cityIds:["a"]}).value).toHaveLength(1);
   });
 
   it("locks multivariable models below 100 complete rows", () => {

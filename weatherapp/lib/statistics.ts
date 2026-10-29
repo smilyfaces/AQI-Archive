@@ -19,6 +19,18 @@ function meta(n: number, method: string, scope: AnalysisScope, warnings: string[
   return { n, method, warnings, scope: checkedScope(scope) };
 }
 
+export type RankingCity = { id:string; slug?:string; name:string; state:string };
+export type CityAqiRank = { cityId:string; slug:string; name:string; state:string; n:number; mean:number|null; median:number|null; p95:number|null; above100Percent:number|null; eligible:boolean };
+export function rankCitiesByAqi(readings:Reading[],cities:RankingCity[],scope:AnalysisScope):InferentialResult<CityAqiRank[]> {
+  const scoped=rowsForScope(readings,scope), allowedCities=scope.kind==="global"&&scope.cityIds?new Set(scope.cityIds):scope.kind==="cities"?new Set(scope.cityIds):null;
+  const cityRows=cities.filter(city=>!allowedCities||allowedCities.has(city.id)).map(city=>{
+    const values=scoped.filter(row=>row.city_id===city.id&&numeric(row.aqi)).map(row=>row.aqi as number).sort((a,b)=>a-b),n=values.length;
+    return {cityId:city.id,slug:city.slug??city.id,name:city.name,state:city.state,n,mean:n?mean(values):null,median:n?median(values):null,p95:n?quantile(values,.95):null,above100Percent:n?100*values.filter(value=>value>100).length/n:null,eligible:n>=MINIMUMS.cityRanking};
+  });
+  const n=cityRows.reduce((sum,city)=>sum+city.n,0),qualifying=cityRows.filter(city=>city.eligible).sort((a,b)=>(a.mean??Infinity)-(b.mean??Infinity));
+  return {...meta(n,"city-level AQI rankings (equal city unit; city-level summaries)",scope),status:"ok",required:MINIMUMS.cityRanking,value:[...qualifying,...cityRows.filter(city=>!city.eligible)]};
+}
+
 export const NUMERIC_METRICS = [
   { key: "aqi", label: "AQI", unit: "" },
   { key: "pm25", label: "PM2.5", unit: "µg/m³" }, { key: "pm10", label: "PM10", unit: "µg/m³" },
