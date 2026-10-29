@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { fromZonedTime } from "date-fns-tz";
 import { cityCatalog, manualLatest, type CitySummary } from "@/lib/catalog";
 import { getManualReadings } from "@/lib/manual-data";
+import { isMissingOptionalCityAnalysisColumn } from "@/lib/schema-compatibility";
 
 export type Reading = {
   id?: number;
@@ -82,7 +83,7 @@ function publicDb() {
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   return url && anon ? createClient(url, anon, { auth: { persistSession: false } }) : null;
 }
-const metadataColumnsMissing=(error:{code?:string}|null|undefined)=>error?.code==="PGRST204";
+const metadataColumnsMissing=isMissingOptionalCityAnalysisColumn;
 
 export async function getCities(): Promise<{ cities: City[]; error: string | null; localFallback: boolean }> {
   const db = publicDb();
