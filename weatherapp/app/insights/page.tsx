@@ -20,6 +20,6 @@ export default async function InsightsPage() {
       {eligible.length?<div className="table-scroll"><table className="stats-table"><thead><tr><th scope="col">Rank</th><th scope="col">City</th><th scope="col">n</th><th scope="col">Mean AQI</th><th scope="col">Median AQI</th><th scope="col">95th percentile</th><th scope="col">Readings above 100</th></tr></thead><tbody>{eligible.map((city,index)=><tr key={city.cityId}><td>{index+1}</td><th scope="row"><Link href={`/city/${city.slug}`}>{city.name}, {city.state}</Link></th><td>{city.n}</td><td>{city.mean?.toFixed(1)}</td><td>{city.median?.toFixed(1)}</td><td>{city.p95?.toFixed(1)}</td><td>{city.above100Percent?.toFixed(1)}%</td></tr>)}</tbody></table></div>:<div className="empty-panel small-empty">No city currently meets the 10-reading minimum.</div>}
       {insufficient.length>0&&<details className="ranking-list"><summary>Not enough data to rank ({insufficient.length} cities)</summary><ul>{insufficient.map(city=><li key={city.cityId}><span>{city.name}, {city.state}</span><strong>n = {city.n} (need 10)</strong></li>)}</ul></details>}
     </section>
-    <CityInsights readings={readings} timezone="UTC" now={asOf} title="All-city statistics and archive insights" showSampleControl />
+    <CityInsights readings={readings} timezone="UTC" now={asOf} title="All-city statistics and archive insights" showSampleControl scope={{kind:"global"}} cities={cities} />
   </div></main>;
 }

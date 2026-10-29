@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { format } from "date-fns";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from "recharts";
 import type { Reading } from "@/lib/data";
-import { correlation, groupedAverages, metricValue, NUMERIC_METRICS, oneWayAnova, rollingAverages, summarize, timeTrend, type MetricKey } from "@/lib/statistics";
+import { correlation, deriveFeatures, groupedAverages, metricValue, multipleWeatherRegression, NUMERIC_METRICS, oneWayAnova, rollingAverages, summarize, timeTrend, type AnalysisScope, type CityContext, type MetricKey } from "@/lib/statistics";
 
 const periodOptions = [{key:"24h",label:"24 hours",duration:24*60*60*1000},{key:"7d",label:"7 days",duration:7*24*60*60*1000},{key:"30d",label:"30 days",duration:30*24*60*60*1000},{key:"90d",label:"90 days",duration:90*24*60*60*1000},{key:"all",label:"All time",duration:Infinity}] as const;
 const fmt = (value:number|null|undefined,digits=2) => value===null||value===undefined||!Number.isFinite(value) ? "N/A" : Number(value.toFixed(digits)).toLocaleString();
@@ -33,7 +33,7 @@ const formatChartDate = (value: unknown) => {
   return Number.isFinite(timestamp) ? format(new Date(timestamp), "MMM d") : "";
 };
 
-export function CityInsights({ readings, timezone, now, title = "Statistics and archive insights", showSampleControl = false }: { readings: Reading[]; timezone: string; now: number; title?: string; showSampleControl?: boolean }) {
+export function CityInsights({ readings, timezone, now, title = "Statistics and archive insights", showSampleControl = false, scope, cities = [] }: { readings: Reading[]; timezone: string; now: number; title?: string; showSampleControl?: boolean; scope?:AnalysisScope; cities?:CityContext[] }) {
   const [period,setPeriod]=useState<(typeof periodOptions)[number]["key"]>("all");
   const [sampleSize,setSampleSize]=useState<"all"|`${number}`>("all");
   const [sampleSeed,setSampleSeed]=useState(0);
@@ -48,6 +48,8 @@ export function CityInsights({ readings, timezone, now, title = "Statistics and 
   const selectedPeriod=periodOptions.find(item=>item.key===period)??periodOptions[3];
   const periodReadings=useMemo(()=>readings.filter(row=>{const age=now-Date.parse(row.recorded_at);return age>=0&&age<=selectedPeriod.duration&&(includeManual||row.source==="automated");}).sort((a,b)=>Date.parse(a.recorded_at)-Date.parse(b.recorded_at)),[readings,now,selectedPeriod,includeManual]);
   const visible=useMemo(()=>sampleSize==="all"?periodReadings:randomSample(periodReadings,Number(sampleSize),sampleSeed).sort((a,b)=>Date.parse(a.recorded_at)-Date.parse(b.recorded_at)),[periodReadings,sampleSize,sampleSeed]);
+  const activeScope=useMemo(()=>scope??(()=>{const ids=[...new Set(visible.map(row=>row.city_id).filter((id):id is string=>!!id))];return ids.length===1?{kind:"city" as const,cityId:ids[0]}:{kind:"global" as const,cityIds:ids};})(),[scope,visible]);
+  const model=useMemo(()=>{if(activeScope.kind!=="city"||!cities.length)return null;const features=deriveFeatures(visible,cities,activeScope);return multipleWeatherRegression(features,metric,activeScope);},[visible,cities,activeScope,metric]);
   const summary=useMemo(()=>NUMERIC_METRICS.map(item=>({ ...item,summary:summarize(visible.map(row=>metricValue(row,item.key))) })),[visible]);
   const selectedValues=visible.map(row=>metricValue(row,metric));
   const selectedSummary=summarize(selectedValues);
@@ -129,6 +131,7 @@ export function CityInsights({ readings, timezone, now, title = "Statistics and 
       </section>
 
       <section className="chart-panel span-12" aria-labelledby="quality-heading"><div className="chart-heading"><div><h3 id="quality-heading">Data quality</h3><p>Coverage for the selected time range.</p></div></div><div className="quality-stats"><div><span>Records</span><strong>{visible.length}</strong></div><div><span>Date range</span><strong>{dateStart?`${getLocalDate(dateStart,timezone)} – ${getLocalDate(dateEnd!,timezone)}`:"N/A"}</strong></div><div><span>Manual entries</span><strong>{visible.filter(row=>row.source==="manual").length}</strong></div><div><span>Automated entries</span><strong>{visible.filter(row=>row.source==="automated").length}</strong></div></div><div className="missing-grid">{dataQuality.map(item=><div key={item.key}><span>{item.label}{item.key==="cloud_coverage_eighths"?" (eighths)":""}</span><strong>{item.missing===null?"N/A":`${item.missing}% N/A`}</strong><span className="missing-track"><i style={{width:`${item.missing??0}%`}}/></span></div>)}</div></section>
+      {model&&<section className="chart-panel span-12" aria-labelledby="model-heading"><div className="chart-heading"><div><h3 id="model-heading">Weather regression model</h3><p>Predictive associations for {metricLabel(metric)} using complete automated observations and local-hour controls.</p></div></div>{model.status!=="ok"?<div className="insufficient">{model.status==="insufficient"?`Model unlocks after 100 complete automated records. Currently ${model.n} complete rows.`:"Model is suppressed because the selected data do not support a stable fit."}</div>:<><p>Adjusted R² {fmt(model.value.adjustedRSquared,3)} · residual SD {fmt(model.value.residualSd,2)} · n = {model.value.n}. Predictive association, not cause.</p><div className="table-scroll"><table className="stats-table"><thead><tr><th scope="col">Feature</th><th scope="col">Standardized coefficient</th><th scope="col">95% CI</th><th scope="col">p</th><th scope="col">VIF</th></tr></thead><tbody>{model.value.coefficients.map(item=><tr key={item.feature}><th scope="row">{item.feature}</th><td>{fmt(item.estimate,3)}</td><td>{fmt(item.ci95[0],3)} to {fmt(item.ci95[1],3)}</td><td>{fmt(item.pValue,4)}</td><td>{fmt(item.vif,2)}</td></tr>)}</tbody></table></div><p className="plain-caption">This model summarizes predictive association in the selected sample. Feature importance is not available in this release.</p></>}</section>}
     </div>
   </div>;
 }
