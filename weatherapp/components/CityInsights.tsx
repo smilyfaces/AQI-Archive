@@ -11,7 +11,7 @@ const fmt = (value:number|null|undefined,digits=2) => value===null||value===unde
 const metricLabel = (key:string) => NUMERIC_METRICS.find(item=>item.key===key)?.label ?? key;
 const getLocalDate=(value:string,timezone:string)=>new Intl.DateTimeFormat("en-US",{timeZone:timezone,month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(new Date(value));
 
-export function CityInsights({ readings, timezone, now }: { readings: Reading[]; timezone: string; now: number }) {
+export function CityInsights({ readings, timezone, now, title = "Statistics and archive insights" }: { readings: Reading[]; timezone: string; now: number; title?: string }) {
   const [period,setPeriod]=useState<(typeof periodOptions)[number]["key"]>("all");
   const [metric,setMetric]=useState<MetricKey>("aqi");
   const [distributionMetric,setDistributionMetric]=useState<MetricKey>("aqi");
@@ -58,7 +58,7 @@ export function CityInsights({ readings, timezone, now }: { readings: Reading[];
   const regression=pearson.r===null||pearson.slope===null||pearson.intercept===null?[]:[{x:Math.min(...scatterRows.map(row=>row.x)),y:pearson.slope*Math.min(...scatterRows.map(row=>row.x))+pearson.intercept},{x:Math.max(...scatterRows.map(row=>row.x)),y:pearson.slope*Math.max(...scatterRows.map(row=>row.x))+pearson.intercept}];
 
   return <div className="insights-content">
-    <div className="insights-toolbar"><div><h2>Statistics and archive insights</h2><p>{visible.length} records in {selectedPeriod.label.toLowerCase()} · dates shown in {timezone}</p></div><div className="segmented-control" role="group" aria-label="Statistics time range">{periodOptions.map(option=><button key={option.key} className={period===option.key?"selected":""} aria-pressed={period===option.key} onClick={()=>setPeriod(option.key)}>{option.label}</button>)}</div></div>
+    <div className="insights-toolbar"><div><h2>{title}</h2><p>{visible.length} records in {selectedPeriod.label.toLowerCase()} · dates shown in {timezone}</p></div><div className="segmented-control" role="group" aria-label="Statistics time range">{periodOptions.map(option=><button key={option.key} className={period===option.key?"selected":""} aria-pressed={period===option.key} onClick={()=>setPeriod(option.key)}>{option.label}</button>)}</div></div>
 
     <section className="insight-section" aria-labelledby="summary-heading"><div className="insight-heading"><h3 id="summary-heading">Summary statistics</h3><p>Each row uses only values recorded for that metric; missing values are excluded.</p></div>
       <div className="table-scroll"><table className="stats-table"><thead><tr><th scope="col">Metric</th><th scope="col">n</th><th scope="col">Mean</th><th scope="col">Median</th><th scope="col">Min</th><th scope="col">Max</th><th scope="col">SD</th><th scope="col">Variance</th><th scope="col">IQR</th><th scope="col">5th pct.</th><th scope="col">95th pct.</th><th scope="col">Mode</th></tr></thead><tbody>{summary.map(item=><tr key={item.key}><th scope="row">{item.label}{item.unit&&<small> {item.unit}</small>}</th><td>{item.summary.n}</td><td>{fmt(item.summary.mean)}</td><td>{fmt(item.summary.median)}</td><td>{fmt(item.summary.min)}</td><td>{fmt(item.summary.max)}</td><td>{fmt(item.summary.sd)}</td><td>{fmt(item.summary.variance)}</td><td>{fmt(item.summary.iqr)}</td><td>{fmt(item.summary.p05)}</td><td>{fmt(item.summary.p95)}</td><td>{fmt(item.summary.mode)}</td></tr>)}</tbody></table></div>

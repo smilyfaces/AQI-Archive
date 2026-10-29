@@ -8,7 +8,7 @@ export const NUMERIC_METRICS = [
   { key: "ozone", label: "Ozone", unit: "µg/m³" }, { key: "no2", label: "NO2", unit: "µg/m³" },
   { key: "so2", label: "SO2", unit: "µg/m³" }, { key: "co", label: "CO", unit: "mg/m³" },
   { key: "temperature_c", label: "Temperature", unit: "°C" }, {key:"dewpoint_c",label:"Dewpoint",unit:"°C"}, { key: "relative_humidity", label: "Relative humidity", unit: "%" },
-  { key: "cloud_coverage_pct", label: "Cloud coverage", unit: "%" }, { key: "precipitation_last_hour_mm", label: "Precipitation (1 h)", unit: "mm" },
+  { key: "cloud_coverage_pct", label: "Cloud coverage", unit: "%" }, { key: "cloud_coverage_eighths", label: "Cloud coverage", unit: "eighths (0–8)" }, { key: "precipitation_last_hour_mm", label: "Precipitation (1 h)", unit: "mm" },
   {key:"precipitation_3h_mm",label:"Precipitation (3 h)",unit:"mm"},{key:"precipitation_6h_mm",label:"Precipitation (6 h)",unit:"mm"},
   {key:"wind_speed_ms",label:"Wind speed",unit:"m/s"},{key:"wind_direction_deg",label:"Wind direction",unit:"°"},{key:"wind_gust_ms",label:"Wind gust",unit:"m/s"},
   {key:"barometric_pressure_pa",label:"Barometric pressure",unit:"Pa"},{key:"sea_level_pressure_pa",label:"Sea-level pressure",unit:"Pa"},{key:"visibility_m",label:"Visibility",unit:"m"},
@@ -91,6 +91,11 @@ export function oneWayAnova(valuesByGroup: Array<Array<number|null|undefined>>, 
 }
 
 export function metricValue(reading: Reading, metric: MetricKey): number | null {
+  if (metric === "cloud_coverage_eighths") {
+    const eighths: Record<string, number> = { Clear: 0, Few: 1, Scattered: 4, Broken: 6, Overcast: 8 };
+    if (reading.cloud_coverage_label && reading.cloud_coverage_label in eighths) return eighths[reading.cloud_coverage_label];
+    return numeric(reading.cloud_coverage_pct) ? reading.cloud_coverage_pct / 12.5 : null;
+  }
   const value=reading[metric];
   return numeric(value) ? value : null;
 }
