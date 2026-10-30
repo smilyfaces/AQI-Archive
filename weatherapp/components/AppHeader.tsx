@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bookmark, ChevronDown, CloudSun, Home, LockKeyhole, RefreshCw, Search, X } from "lucide-react";
+import { BarChart3, Bookmark, ChevronDown, CloudSun, Home, LockKeyhole, RefreshCw, Search, X } from "lucide-react";
 import { cityCatalog } from "@/lib/catalog";
 import { useSavedCities } from "@/components/SavedCitiesProvider";
 
@@ -92,6 +92,7 @@ export function AppHeader() {
       <button className="mobile-search-toggle icon-button" aria-label={mobileSearch ? "Close search" : "Open city search"} onClick={() => setMobileSearch(value => !value)}><Search size={19} /></button>
       <nav aria-label="Main navigation" className="main-nav">
         <Link className={`nav-link${pathname === "/" ? " active" : ""}`} href="/"><Home size={17} aria-hidden="true" /><span>Home</span></Link>
+        <Link className={`nav-link${pathname === "/insights" ? " active" : ""}`} href="/insights"><BarChart3 size={17} aria-hidden="true" /><span>Insights</span></Link>
         <Link className={`nav-link saved-nav${pathname === "/saved" ? " active" : ""}`} href="/saved"><Bookmark size={17} aria-hidden="true" /><span>Saved</span><span className="saved-count" aria-label={`${saved.length} saved cities`}>{saved.length}</span></Link>
       </nav>
       {forceScope && <button className="force-record-trigger" onClick={() => { setForceOpen(true); setForcePassword(""); setForceMessage(""); }} aria-label={`Force recording for ${forceTitle}`} aria-haspopup="dialog"><RefreshCw size={16} aria-hidden="true" /><span>Record now</span></button>}

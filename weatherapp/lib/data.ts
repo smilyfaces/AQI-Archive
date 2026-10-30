@@ -93,6 +93,23 @@ export async function getCities(): Promise<{ cities: City[]; error: string | nul
   }), error: null, localFallback: false };
 }
 
+export async function getAllReadings(): Promise<{ readings: Reading[]; error: string | null; localFallback: boolean }> {
+  const db = publicDb();
+  if (!db) return { readings: cityCatalog.flatMap(city => getManualReadings(city.slug)), error: null, localFallback: true };
+
+  const readings: Reading[] = [];
+  const pageSize = 1000;
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await db.from("readings").select("*").order("recorded_at", { ascending: true }).range(offset, offset + pageSize - 1);
+    if (error?.code === "PGRST205") return { readings: cityCatalog.flatMap(city => getManualReadings(city.slug)), error: null, localFallback: true };
+    if (error) return { readings: [], error: error.message, localFallback: false };
+    const batch = (data ?? []) as Reading[];
+    readings.push(...batch);
+    if (batch.length < pageSize) break;
+  }
+  return { readings, error: null, localFallback: false };
+}
+
 export async function getCity(slug: string): Promise<{ city: City | null; readings: Reading[]; error: string | null; localFallback: boolean; asOf:number }> {
   const db = publicDb();
   if (!db) {

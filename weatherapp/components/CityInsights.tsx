@@ -10,9 +10,33 @@ const periodOptions = [{key:"24h",label:"24 hours",duration:24*60*60*1000},{key:
 const fmt = (value:number|null|undefined,digits=2) => value===null||value===undefined||!Number.isFinite(value) ? "N/A" : Number(value.toFixed(digits)).toLocaleString();
 const metricLabel = (key:string) => NUMERIC_METRICS.find(item=>item.key===key)?.label ?? key;
 const getLocalDate=(value:string,timezone:string)=>new Intl.DateTimeFormat("en-US",{timeZone:timezone,month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(new Date(value));
+const sampleSizes = [100, 500, 1000, 5000] as const;
+function randomSample<T>(values: T[], size: number, seed: number): T[] {
+  const shuffled = [...values];
+  let state = seed >>> 0;
+  const nextRandom = () => {
+    state += 0x6D2B79F5;
+    let value = state;
+    value = Math.imul(value ^ value >>> 15, value | 1);
+    value ^= value + Math.imul(value ^ value >>> 7, value | 61);
+    return ((value ^ value >>> 14) >>> 0) / 4294967296;
+  };
+  for (let index = shuffled.length - 1; index > 0; index--) {
+    const other = Math.floor(nextRandom() * (index + 1));
+    [shuffled[index], shuffled[other]] = [shuffled[other], shuffled[index]];
+  }
+  return shuffled.slice(0, Math.min(size, shuffled.length));
+}
+const formatChartDate = (value: unknown) => {
+  if (value === null || value === undefined || value === "") return "";
+  const timestamp = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(timestamp) ? format(new Date(timestamp), "MMM d") : "";
+};
 
-export function CityInsights({ readings, timezone, now }: { readings: Reading[]; timezone: string; now: number }) {
+export function CityInsights({ readings, timezone, now, title = "Statistics and archive insights", showSampleControl = false }: { readings: Reading[]; timezone: string; now: number; title?: string; showSampleControl?: boolean }) {
   const [period,setPeriod]=useState<(typeof periodOptions)[number]["key"]>("all");
+  const [sampleSize,setSampleSize]=useState<"all"|`${number}`>("all");
+  const [sampleSeed,setSampleSeed]=useState(0);
   const [metric,setMetric]=useState<MetricKey>("aqi");
   const [distributionMetric,setDistributionMetric]=useState<MetricKey>("aqi");
   const [xMetric,setXMetric]=useState<MetricKey>("temperature_c");
@@ -21,7 +45,8 @@ export function CityInsights({ readings, timezone, now }: { readings: Reading[];
   const [correlationMethod,setCorrelationMethod]=useState<"pearson"|"spearman">("pearson");
   const [tableView,setTableView]=useState<Record<string,boolean>>({});
   const selectedPeriod=periodOptions.find(item=>item.key===period)??periodOptions[3];
-  const visible=useMemo(()=>readings.filter(row=>{const age=now-Date.parse(row.recorded_at);return age>=0&&age<=selectedPeriod.duration;}).sort((a,b)=>Date.parse(a.recorded_at)-Date.parse(b.recorded_at)),[readings,now,selectedPeriod]);
+  const periodReadings=useMemo(()=>readings.filter(row=>{const age=now-Date.parse(row.recorded_at);return age>=0&&age<=selectedPeriod.duration;}).sort((a,b)=>Date.parse(a.recorded_at)-Date.parse(b.recorded_at)),[readings,now,selectedPeriod]);
+  const visible=useMemo(()=>sampleSize==="all"?periodReadings:randomSample(periodReadings,Number(sampleSize),sampleSeed).sort((a,b)=>Date.parse(a.recorded_at)-Date.parse(b.recorded_at)),[periodReadings,sampleSize,sampleSeed]);
   const summary=useMemo(()=>NUMERIC_METRICS.map(item=>({ ...item,summary:summarize(visible.map(row=>metricValue(row,item.key))) })),[visible]);
   const selectedValues=visible.map(row=>metricValue(row,metric));
   const selectedSummary=summarize(selectedValues);
@@ -46,11 +71,17 @@ export function CityInsights({ readings, timezone, now }: { readings: Reading[];
   const trend=timeTrend(visible,"aqi");
   const rolling24=rollingAverages(visible,"aqi",24*60*60*1000);
   const rolling7d=rollingAverages(visible,"aqi",7*24*60*60*1000);
+  const rollingRows = useMemo(() => {
+    const rows = new Map<number, { timestamp: number; short?: number; long?: number }>();
+    for (const row of rolling24) rows.set(row.timestamp, { timestamp: row.timestamp, short: row.mean });
+    for (const row of rolling7d) rows.set(row.timestamp, { ...rows.get(row.timestamp), timestamp: row.timestamp, long: row.mean });
+    return [...rows.values()].sort((a, b) => a.timestamp - b.timestamp);
+  }, [rolling24, rolling7d]);
   const matrix=NUMERIC_METRICS.map(x=>({key:x.key,label:x.label,cells:NUMERIC_METRICS.map(y=>{
     const result=correlation(visible.map(row=>metricValue(row,x.key)),visible.map(row=>metricValue(row,y.key)),correlationMethod);
     return {key:y.key,r:result.r,n:result.n,suppressed:result.suppressed};
   })}));
-  const dataQuality=NUMERIC_METRICS.map(item=>({label:item.label,missing:visible.length?Math.round(visible.filter(row=>metricValue(row,item.key)===null).length/visible.length*100):null}));
+  const dataQuality=NUMERIC_METRICS.map(item=>({key:item.key,label:item.label,missing:visible.length?Math.round(visible.filter(row=>metricValue(row,item.key)===null).length/visible.length*100):null}));
   const dateStart=visible[0]?.recorded_at,dateEnd=visible.at(-1)?.recorded_at;
   const toggleTable=(key:string)=>setTableView(current=>({...current,[key]:!current[key]}));
   const chartRows=visible.filter(row=>metricValue(row,metric)!==null).map(row=>({timestamp:Date.parse(row.recorded_at),value:metricValue(row,metric),recorded_at:row.recorded_at}));
@@ -58,7 +89,7 @@ export function CityInsights({ readings, timezone, now }: { readings: Reading[];
   const regression=pearson.r===null||pearson.slope===null||pearson.intercept===null?[]:[{x:Math.min(...scatterRows.map(row=>row.x)),y:pearson.slope*Math.min(...scatterRows.map(row=>row.x))+pearson.intercept},{x:Math.max(...scatterRows.map(row=>row.x)),y:pearson.slope*Math.max(...scatterRows.map(row=>row.x))+pearson.intercept}];
 
   return <div className="insights-content">
-    <div className="insights-toolbar"><div><h2>Statistics and archive insights</h2><p>{visible.length} records in {selectedPeriod.label.toLowerCase()} · dates shown in {timezone}</p></div><div className="segmented-control" role="group" aria-label="Statistics time range">{periodOptions.map(option=><button key={option.key} className={period===option.key?"selected":""} aria-pressed={period===option.key} onClick={()=>setPeriod(option.key)}>{option.label}</button>)}</div></div>
+    <div className="insights-toolbar"><div><h2>{title}</h2><p>{showSampleControl&&sampleSize!=="all"?`Random sample of ${visible.length} from ${periodReadings.length} records`:`${visible.length} records`} in {selectedPeriod.label.toLowerCase()} · dates shown in {timezone}</p></div><div className="insights-toolbar-controls"><div className="segmented-control" role="group" aria-label="Statistics time range">{periodOptions.map(option=><button key={option.key} className={period===option.key?"selected":""} aria-pressed={period===option.key} onClick={()=>setPeriod(option.key)}>{option.label}</button>)}</div>{showSampleControl&&<label className="sample-size-control"><span>Sample size</span><select value={sampleSize} onChange={event=>{const value=event.target.value as typeof sampleSize;setSampleSize(value);setSampleSeed(Math.floor(Math.random()*4294967296));}}><option value="all">All readings</option>{sampleSizes.map(size=><option key={size} value={String(size)}>{size.toLocaleString()} readings</option>)}</select></label>}</div></div>
 
     <section className="insight-section" aria-labelledby="summary-heading"><div className="insight-heading"><h3 id="summary-heading">Summary statistics</h3><p>Each row uses only values recorded for that metric; missing values are excluded.</p></div>
       <div className="table-scroll"><table className="stats-table"><thead><tr><th scope="col">Metric</th><th scope="col">n</th><th scope="col">Mean</th><th scope="col">Median</th><th scope="col">Min</th><th scope="col">Max</th><th scope="col">SD</th><th scope="col">Variance</th><th scope="col">IQR</th><th scope="col">5th pct.</th><th scope="col">95th pct.</th><th scope="col">Mode</th></tr></thead><tbody>{summary.map(item=><tr key={item.key}><th scope="row">{item.label}{item.unit&&<small> {item.unit}</small>}</th><td>{item.summary.n}</td><td>{fmt(item.summary.mean)}</td><td>{fmt(item.summary.median)}</td><td>{fmt(item.summary.min)}</td><td>{fmt(item.summary.max)}</td><td>{fmt(item.summary.sd)}</td><td>{fmt(item.summary.variance)}</td><td>{fmt(item.summary.iqr)}</td><td>{fmt(item.summary.p05)}</td><td>{fmt(item.summary.p95)}</td><td>{fmt(item.summary.mode)}</td></tr>)}</tbody></table></div>
@@ -88,7 +119,7 @@ export function CityInsights({ readings, timezone, now }: { readings: Reading[];
       </section>
 
       <section className="chart-panel span-6" aria-labelledby="rolling-heading"><div className="chart-heading"><div><h3 id="rolling-heading">Rolling AQI averages</h3><p>Windowed over real timestamps; no uniform spacing is assumed.</p></div></div>
-        {selectedSummary.n>=5?<><div className="rolling-legend"><span><i className="legend-dot"/>24 hour window</span><span><i className="legend-dot seven-day"/>7 day window</span></div><div className="chart-frame"><ResponsiveContainer width="100%" height="100%"><LineChart data={rolling24.map((row,index)=>({timestamp:row.timestamp,short:row.mean,long:rolling7d[index]?.mean}))} margin={{top:8,right:12,bottom:8,left:4}}><CartesianGrid stroke="var(--border)" strokeDasharray="3 3"/><XAxis dataKey="timestamp" type="number" scale="time" domain={['dataMin','dataMax']} tickFormatter={value=>format(new Date(value),"MMM d")} stroke="var(--ink-muted)"/><YAxis width={42} stroke="var(--ink-muted)"/><Tooltip labelFormatter={value=>getLocalDate(new Date(Number(value)).toISOString(),timezone)}/><Line dataKey="short" name="24 hour" stroke="var(--blue-600)" dot={false} connectNulls={false}/><Line dataKey="long" name="7 day" stroke="var(--success)" dot={false} connectNulls={false}/></LineChart></ResponsiveContainer></div><p className="chart-alt">Rolling values are calculated from readings that actually fall within each time window.</p></>:<Insufficient n={selectedSummary.n} need={5}/>}
+        {selectedSummary.n>=5?<><div className="rolling-legend"><span><i className="legend-dot"/>24 hour window</span><span><i className="legend-dot seven-day"/>7 day window</span></div><div className="chart-frame"><ResponsiveContainer width="100%" height="100%"><LineChart data={rollingRows} margin={{top:8,right:12,bottom:8,left:4}}><CartesianGrid stroke="var(--border)" strokeDasharray="3 3"/><XAxis dataKey="timestamp" type="number" scale="time" domain={['dataMin','dataMax']} tickFormatter={formatChartDate} stroke="var(--ink-muted)"/><YAxis width={42} stroke="var(--ink-muted)"/><Tooltip labelFormatter={value=>formatChartDate(value)===""?"":getLocalDate(new Date(Number(value)).toISOString(),timezone)}/><Line dataKey="short" name="24 hour" stroke="var(--blue-600)" dot={false} connectNulls={false}/><Line dataKey="long" name="7 day" stroke="var(--success)" dot={false} connectNulls={false}/></LineChart></ResponsiveContainer></div><p className="chart-alt">Rolling values are calculated from readings that actually fall within each time window.</p></>:<Insufficient n={selectedSummary.n} need={5}/>}
       </section>
 
       <section className="chart-panel span-12" aria-labelledby="groups-heading"><div className="chart-heading"><div><h3 id="groups-heading">AQI group comparisons</h3><p>Group summaries with a one-way ANOVA when sample size permits.</p></div><label className="compact-select"><span className="sr-only">Group AQI by</span><select value={groupMode} onChange={event=>setGroupMode(event.target.value as typeof groupMode)}><option value="pollutant">Primary pollutant</option><option value="precipitation">Precipitation type</option><option value="cloud">Cloud coverage</option></select></label></div>
@@ -96,7 +127,7 @@ export function CityInsights({ readings, timezone, now }: { readings: Reading[];
         <div className="categorical-grid"><CategoryDistribution title="AQI category" values={visible.map(row=>row.aqi_category)}/><CategoryDistribution title="Primary pollutant" values={visible.map(row=>row.primary_pollutant)}/><CategoryDistribution title="Precipitation type" values={visible.map(row=>row.precipitation_type)}/><CategoryDistribution title="Cloud coverage" values={visible.map(row=>row.cloud_coverage_label)}/></div>
       </section>
 
-      <section className="chart-panel span-12" aria-labelledby="quality-heading"><div className="chart-heading"><div><h3 id="quality-heading">Data quality</h3><p>Coverage for the selected time range.</p></div></div><div className="quality-stats"><div><span>Records</span><strong>{visible.length}</strong></div><div><span>Date range</span><strong>{dateStart?`${getLocalDate(dateStart,timezone)} – ${getLocalDate(dateEnd!,timezone)}`:"N/A"}</strong></div><div><span>Manual entries</span><strong>{visible.filter(row=>row.source==="manual").length}</strong></div><div><span>Automated entries</span><strong>{visible.filter(row=>row.source==="automated").length}</strong></div></div><div className="missing-grid">{dataQuality.map(item=><div key={item.label}><span>{item.label}</span><strong>{item.missing===null?"N/A":`${item.missing}% N/A`}</strong><span className="missing-track"><i style={{width:`${item.missing??0}%`}}/></span></div>)}</div></section>
+      <section className="chart-panel span-12" aria-labelledby="quality-heading"><div className="chart-heading"><div><h3 id="quality-heading">Data quality</h3><p>Coverage for the selected time range.</p></div></div><div className="quality-stats"><div><span>Records</span><strong>{visible.length}</strong></div><div><span>Date range</span><strong>{dateStart?`${getLocalDate(dateStart,timezone)} – ${getLocalDate(dateEnd!,timezone)}`:"N/A"}</strong></div><div><span>Manual entries</span><strong>{visible.filter(row=>row.source==="manual").length}</strong></div><div><span>Automated entries</span><strong>{visible.filter(row=>row.source==="automated").length}</strong></div></div><div className="missing-grid">{dataQuality.map(item=><div key={item.key}><span>{item.label}{item.key==="cloud_coverage_eighths"?" (eighths)":""}</span><strong>{item.missing===null?"N/A":`${item.missing}% N/A`}</strong><span className="missing-track"><i style={{width:`${item.missing??0}%`}}/></span></div>)}</div></section>
     </div>
   </div>;
 }

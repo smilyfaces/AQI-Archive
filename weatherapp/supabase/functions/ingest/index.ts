@@ -54,8 +54,16 @@ function openAqJson<T>(url: string, init: RequestInit): Promise<T> {
 }
 const num = (v: unknown): number | null => typeof v === "number" && Number.isFinite(v) ? v : null;
 const nwsValue = (v: { value?: number | null } | null | undefined): number | null => num(v?.value);
+const nwsMillimeters = (v: { value?: number | null; unitCode?: string } | null | undefined): number | null => {
+  const value = nwsValue(v);
+  if (value === null) return null;
+  const unit = v?.unitCode?.toLowerCase() ?? "";
+  if (unit.includes(":in") || unit.endsWith("inch")) return value * 25.4;
+  if (unit.includes(":cm") || unit.endsWith("centimeter")) return value * 10;
+  return value;
+};
 const category = (aqi: number | null) => aqi === null ? null : aqi <= 50 ? "Good" : aqi <= 100 ? "Moderate" : aqi <= 150 ? "Unhealthy for Sensitive Groups" : aqi <= 200 ? "Unhealthy" : aqi <= 300 ? "Very Unhealthy" : "Hazardous";
-const cloudMap: Record<string, [number, string]> = { CLR: [0,"Clear"], SKC: [0,"Clear"], FEW: [18,"Few"], SCT: [44,"Scattered"], BKN: [75,"Broken"], OVC: [100,"Overcast"], VV: [100,"Overcast"] };
+const cloudMap: Record<string, [number, string]> = { CLR: [0,"Clear"], SKC: [0,"Clear"], FEW: [12.5,"Few"], SCT: [50,"Scattered"], BKN: [75,"Broken"], OVC: [100,"Overcast"], VV: [100,"Overcast"] };
 const precipitation = (items: Array<{ rawString?: string; weather?: string }> = []) => {
   const text = items.map(x => `${x.rawString ?? ""} ${x.weather ?? ""}`).join(" ").toUpperCase();
   if (/FZRA|FREEZING RAIN/.test(text)) return "freezing_rain";
@@ -107,11 +115,12 @@ async function weatherFor(city: City, headers: HeadersInit) {
   const layers = Array.isArray(p.cloudLayers) ? p.cloudLayers as Array<{ amount?: { value?: string | null }; base?: { value?: number | null } }> : [];
   const cloud = layers.map(layer => cloudMap[layer.amount?.value ?? ""]).filter(Boolean).sort((a,b) => b[0]-a[0])[0];
   const quantified = (name: string) => nwsValue(p[name] as { value?: number | null } | null | undefined);
+  const precipitationAmount = (name: string) => nwsMillimeters(p[name] as { value?: number | null; unitCode?: string } | null | undefined);
   return {
     temperature_c: quantified("temperature"), dewpoint_c: quantified("dewpoint"), relative_humidity: quantified("relativeHumidity"),
     cloud_coverage_pct: cloud?.[0] ?? null, cloud_coverage_label: cloud?.[1] ?? null, cloud_layers: layers.length ? layers : null,
-    precipitation_last_hour_mm: quantified("precipitationLastHour"), precipitation_3h_mm: quantified("precipitationLast3Hours"),
-    precipitation_6h_mm: quantified("precipitationLast6Hours"), precipitation_type: precipitation(pWet),
+    precipitation_last_hour_mm: precipitationAmount("precipitationLastHour"), precipitation_3h_mm: precipitationAmount("precipitationLast3Hours"),
+    precipitation_6h_mm: precipitationAmount("precipitationLast6Hours"), precipitation_type: precipitation(pWet),
     text_description: typeof p.textDescription === "string" ? p.textDescription : null,
     wind_speed_ms: quantified("windSpeed"), wind_direction_deg: quantified("windDirection"), wind_gust_ms: quantified("windGust"),
     barometric_pressure_pa: quantified("barometricPressure"), sea_level_pressure_pa: quantified("seaLevelPressure"),
@@ -165,7 +174,7 @@ async function airData(city: City, hour: Date, key: string) {
   for (const item of concentrations) {
     const param = paramField[item.Parameter.toUpperCase()];
     const value = num(item.Value);
-    if (!param || value === null || num(item.Latitude)===null || num(item.Longitude)===null) continue;
+    if (!param || value === null || value < 0 || num(item.Latitude)===null || num(item.Longitude)===null) continue;
     const distance=distanceKm(city.lat,city.lon,item.Latitude!,item.Longitude!);
     if(distance>AIR_QUALITY_SEARCH_RADII_KM.at(-1)!)continue;
     const unit = (item.Unit ?? "").toUpperCase();
@@ -173,6 +182,7 @@ async function airData(city: City, hour: Date, key: string) {
     if (unit.includes("PPB")) normalized = value * (param === "ozone" ? 1.96 : param === "no2" ? 1.88 : param === "so2" ? 2.62 : 1);
     else if (unit.includes("PPM") && param === "co") normalized = value * 1.146;
     else if ((unit.includes("MG/M3") || unit.includes("MG/M^3")) && param !== "co") normalized = value * 1000;
+    if (!Number.isFinite(normalized) || normalized < 0) continue;
     concentrationMeasurements.push({parameter:param,value:normalized,distanceKm:distance,siteName:item.SiteName??item.FullAQSCode});
   }
   const concentrationAverages=averageAtNearestRadius(concentrationMeasurements);
@@ -205,13 +215,14 @@ async function openAqFallback(city: City, hour: Date, key: string, missing: stri
       try {
         const query = new URLSearchParams({ datetime_from: hour.toISOString(), datetime_to: new Date(hour.getTime()+2*60*60*1000).toISOString(), limit:"100" });
         const result = openAqMeasurementsSchema.parse(await openAqJson<unknown>(`https://api.openaq.org/v3/sensors/${sensor.id}/measurements?${query}`, { headers: { "X-API-Key": key } }));
-        const valid = result.results.filter(row => row.value !== null && row.period?.datetimeFrom?.utc && Math.abs(Date.parse(row.period.datetimeFrom.utc)-hour.getTime()) <= 2*60*60*1000);
+        const valid = result.results.filter(row => row.value !== null && row.value >= 0 && row.period?.datetimeFrom?.utc && Math.abs(Date.parse(row.period.datetimeFrom.utc)-hour.getTime()) <= 2*60*60*1000);
         if (!valid.length) continue;
         let value = valid.reduce((sum, row) => sum + row.value!, 0) / valid.length;
         const unit = valid[0].parameter.units.toLowerCase();
         if (unit === "ppb") value *= field === "ozone" ? 1.96 : field === "no2" ? 1.88 : field === "so2" ? 2.62 : 1;
         if (unit === "ppm" && field === "co") value *= 1.146;
         if (unit === "mg/m³" && field !== "co") value *= 1000;
+        if (!Number.isFinite(value) || value < 0) continue;
         out[field] = value;
         break;
       } catch (error) {
@@ -277,6 +288,9 @@ Deno.serve(async (request: Request) => {
       if (!weather && !air) { counts.failed++; return; }
       const { raw_weather, raw_aqi, raw_concentrations, ...weatherFields } = weather ?? {};
       const airFields = { ...(air ?? {}) };
+      for (const field of ["pm25", "pm10", "ozone", "no2", "so2", "co"] as const) {
+        if (typeof airFields[field] === "number" && (!Number.isFinite(airFields[field]) || airFields[field]! < 0)) airFields[field] = null;
+      }
       delete airFields.raw_aqi;
       delete airFields.raw_concentrations;
       delete airFields.source_errors;
