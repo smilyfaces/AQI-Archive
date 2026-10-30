@@ -346,6 +346,12 @@ Per the wireframe:
   11. **Weather comparison** (avg temp, RH, cloud cover, precip frequency).
 - Comparisons use only **overlapping observation windows** by default (with a toggle for "all available data") and display `n` per city.
 
+### 7.9 Cross-city insights (`/insights`)
+- The main navigation links to this archive-wide statistics page.
+- Users can choose a 24-hour, 7-day, 30-day, 90-day, or all-time window, automated readings or readings including manual entries, and (for the pooled view) a random sample size.
+- AQI city rankings use one summary per city and require at least 10 valid AQI observations. Cities below that minimum remain visible in a separate insufficient-coverage list.
+- The page also provides pooled numeric summaries, distributions, time patterns, metric relationships, and weather-group summaries. Statistical relationships describe association and do not establish cause.
+
 ### 7.8 States every page must handle
 Loading (skeletons), empty, partial data ("N/A"), stale data, error with retry, 404 for unknown city slug, offline/slow network.
 
