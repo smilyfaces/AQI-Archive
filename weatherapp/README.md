@@ -110,6 +110,7 @@ NWS keeps recent observations for seven days, and AirNow identifies its web-serv
 ### Routes
 
 - `/` shows worst, best, and all tracked cities. Saved state is shared across tabs through the `savedCities` local-storage key.
+- `/insights` compares archive statistics across cities, including city AQI rankings and selectable date range, dataset, and sample size.
 - `/city/[slug]` shows current conditions, archive access, and statistics. Correlations and significance tests are suppressed for small samples.
 - `/city/[slug]/archive` supports date, local-time, primary-pollutant, and primary-concentration filters. Filters are shareable in the URL; the PDF endpoint exports matching rows across pages and caps exports at 20,000 rows.
 - `/saved` lets you remove or compare saved cities side by side. Saved cities are device-local and do not require an account.

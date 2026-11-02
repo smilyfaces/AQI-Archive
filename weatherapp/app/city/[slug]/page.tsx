@@ -47,7 +47,7 @@ export default async function CityPage({params}:{params:Promise<{slug:string}>})
         </div><div className="city-source-row"><span><Gauge size={15}/> Data source</span><p>{city.data_source_note??(latest?.weather_station_id?`NWS station ${latest.weather_station_id}`:"Nearby reporting and weather stations")}{latest?.aqi_source_site?` · AQI: ${latest.aqi_source_site}`:""}</p></div></div>
         <div className="hero-last-updated">{latest?.recorded_at?<>Last reading <time dateTime={latest.recorded_at}>{new Intl.DateTimeFormat("en-US",{timeZone:timezone,year:"numeric",month:"short",day:"numeric",hour:"numeric",minute:"2-digit",timeZoneName:"short"}).format(new Date(latest.recorded_at))}</time>{city.stale&&<span className="stale-tag">Stale</span>}</>:"No readings yet"}</div>
       </section>
-      <CityInsights readings={readings} timezone={timezone} now={asOf}/>
+      <CityInsights readings={readings.map(row=>({...row,city_id:row.city_id??city.id??city.slug}))} timezone={timezone} now={asOf} scope={{kind:"city",cityId:city.id??city.slug}} cities={city.lat!==undefined&&city.lon!==undefined?[{id:city.id??city.slug,slug:city.slug,name:city.name,state:city.state,timezone,lat:city.lat,lon:city.lon,region:city.region,climateType:city.climate_type,sizeBand:city.size_band,population:city.population}]:[]}/>
     </div>
   </main>;
 }
