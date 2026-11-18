@@ -80,7 +80,7 @@
   .insights-content .insights-toolbar h2 { font-size: 1.2rem; line-height: 1.2; }
   .insights-content .insights-toolbar-controls { flex-direction: row; justify-content: flex-start; gap: .4rem; }
   .insights-content .sample-size-control { flex-wrap: wrap; gap: .25rem; flex: 1 1 8rem; }
-  .insights-content .sample-size-control select { width: 100%; min-height: 2.15rem; }
+  .insights-content .sample-size-control select { width: 100%; min-height: 2.15rem; padding-inline: .65rem 1.25rem; }
   .insights-content .insights-toolbar-controls .segmented-control { display: none; }
   .insights-content .analysis-mobile-period { display: flex; }
   .analysis-section .chart-heading { flex-wrap: wrap; }
