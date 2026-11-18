@@ -56,6 +56,8 @@
   --r-lg: .75rem;
   --r-xl: 1rem;
   --r-pill: 999px;
+  --r-round: 50%;
+  --shadow-focus: 0 0 0 2px color-mix(in srgb, var(--focus) 30%, transparent);
   --shadow-1: 0 1px 3px var(--border);
   --shadow-2: 0 4px 16px var(--border);
   --shadow-3: 0 12px 32px var(--border-strong);

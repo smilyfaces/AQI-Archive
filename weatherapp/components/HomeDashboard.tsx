@@ -57,14 +57,16 @@ export function HomeDashboard({ cities, error, localFallback }: { cities: City[]
       && (!filters.pollutant.length || filters.pollutant.includes(city.latest?.primary_pollutant ?? ""))
       && (!filters.category.length || filters.category.includes(aqiCategory(aqi).key))
       && (!filters.saved || saved.includes(city.slug))
-      && (!filters.readings || aqi !== null);
+      && (!filters.readings || city.latest !== null);
   }).sort((a, b) => {
-    const missing = Number(a.latest?.aqi == null) - Number(b.latest?.aqi == null);
+    const missing = Number(a.latest === null) - Number(b.latest === null);
     if (missing) return missing;
     const byName = names.compare(a.name, b.name) || names.compare(a.state, b.state);
     if (filters.sort === "name") return byName;
     if (filters.sort === "state") return names.compare(stateName(a.state), stateName(b.state)) || byName;
     if (filters.sort === "recent") return ((Date.parse(b.latest?.recorded_at ?? "") || 0) - (Date.parse(a.latest?.recorded_at ?? "") || 0)) || byName;
+    const missingAqi = Number(a.latest?.aqi == null) - Number(b.latest?.aqi == null);
+    if (missingAqi) return missingAqi;
     const difference = (a.latest?.aqi ?? 0) - (b.latest?.aqi ?? 0);
     return (filters.sort === "aqi-desc" ? -difference : difference) || byName;
   });
@@ -81,7 +83,7 @@ export function HomeDashboard({ cities, error, localFallback }: { cities: City[]
   })));
   if (filters.q) active.push({ key: "query", label: filters.q, remove: () => update({ q: "" }) });
   if (filters.saved) active.push({ key: "saved", label: "Saved only", remove: () => update({ saved: false }) });
-  if (filters.readings) active.push({ key: "readings", label: "Has AQI", remove: () => update({ readings: false }) });
+  if (filters.readings) active.push({ key: "readings", label: "Has reading", remove: () => update({ readings: false }) });
 
   return (
     <div className="page-container home-directory">

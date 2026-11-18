@@ -80,7 +80,7 @@ function FilterFields({ value, facets, update }: { value: Filters; facets: Facet
         </details>
       ))}
       <label className="city-filter-toggle"><input type="checkbox" checked={value.saved} onChange={event => update({ saved: event.target.checked })} /> Saved only</label>
-      <label className="city-filter-toggle"><input type="checkbox" checked={value.readings} onChange={event => update({ readings: event.target.checked })} /> Has AQI</label>
+      <label className="city-filter-toggle"><input type="checkbox" checked={value.readings} onChange={event => update({ readings: event.target.checked })} /> Has reading</label>
     </>
   );
 }
