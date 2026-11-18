@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Archive, Cloud, CloudRain, CloudSun, Droplets, Gauge, Wind } from "lucide-react";
+import { AqiRing } from "@/components/AqiRing";
 import { CityInsights } from "@/components/CityInsights";
 import { SaveButton } from "@/components/SaveButton";
 import { getCity } from "@/lib/data";
@@ -26,7 +27,6 @@ export default async function CityPage({params}:{params:Promise<{slug:string}>})
   const concentration=primary==="PM2.5"?latest?.pm25:primary==="PM10"?latest?.pm10:primary==="Ozone"?latest?.ozone:primary==="NO2"?latest?.no2:primary==="SO2"?latest?.so2:primary==="CO"?latest?.co:null;
   const weatherIcon=latest?.text_description?.toLowerCase().includes("rain")?<CloudRain size={18}/>:latest?.text_description?.toLowerCase().includes("cloud")?<CloudSun size={18}/>:<Cloud size={18}/>;
   const timezone=city.timezone??(city.slug==="oakland-ca"?"America/Los_Angeles":city.slug==="lamont-ok"?"America/Chicago":"America/New_York");
-  const ringAngle=aqi===null?0:Math.min(360,aqi/500*360);
 
   return <main id="main-content" className="page-main city-page">
     <div className="page-container">
@@ -34,7 +34,7 @@ export default async function CityPage({params}:{params:Promise<{slug:string}>})
       {localFallback&&<div className="notice-panel"><span>Showing the supplied manual readings until the Supabase schema is applied. No weather was backfilled.</span></div>}
       <section className="city-hero" aria-labelledby="city-title">
         <div className="city-hero-main">
-          <div className={`aqi-ring tone-${tone(aqi)}`} role="img" aria-label={aqi===null?"Air quality unavailable":"AQI " + aqi + ", " + (latest?.aqi_category??"category unavailable")} style={{background:`conic-gradient(var(--aqi-color) ${ringAngle}deg, var(--surface-2) ${ringAngle}deg)`}}><div className="aqi-ring-inner"><strong>{na(aqi)}</strong><span>AQI</span></div></div>
+          <AqiRing aqi={aqi} size={138} />
           <div className="city-hero-copy"><p className="page-kicker">City air quality</p><h1 id="city-title">{city.name}, {city.state}</h1><span className={`category-pill tone-${tone(aqi)}`}>{latest?.aqi_category??"Not available"}</span><div className="hero-actions"><SaveButton slug={city.slug} cityName={`${city.name}, ${city.state}`} /><Link className="button primary" href={`/city/${city.slug}/archive`}><Archive size={17}/>View archive</Link></div></div>
         </div>
         <div className="current-conditions"><h2>Current conditions</h2><div className="current-primary"><span>Primary pollutant</span><strong>{primary??"N/A"}</strong><small>{concentration===null||concentration===undefined?"N/A":`${concentration} ${primary==="CO"?"mg/m³":"µg/m³"}`}</small></div><div className="condition-grid">

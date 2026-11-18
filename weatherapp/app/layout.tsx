@@ -3,6 +3,8 @@ import { Instrument_Sans, Fraunces } from "next/font/google";
 import { SavedCitiesProvider } from "@/components/SavedCitiesProvider";
 import { AppHeader } from "@/components/AppHeader";
 import "./globals.css";
+import "./directory.css";
+import "./analysis.css";
 
 const instrument = Instrument_Sans({
   variable: "--font-ui",

@@ -64,9 +64,10 @@
   --text-meta: .8125rem;
   --text-label: .875rem;
   --text-body: 1rem;
-  --text-title: clamp(2.5rem, 5vw, 4.75rem);
+  --text-title: clamp(2.3rem, 4.3vw, 3.9rem);
   --card-padding: clamp(.875rem, 2vw, 1.5rem);
   --hairline: 1px;
+  --header-offset: 4.5rem;
 }
 
 /* Alternate schemes override palette primitives here. */

@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 type ThumbnailProp = {
     imageUrl : string;
     name : string;
@@ -9,8 +11,8 @@ type ThumbnailProp = {
 
 export default function CityThumbnail({imageUrl, name, aqi, pollutant, concentration, level} : ThumbnailProp){
     return (
-        <div className=" rounded-lg border-slate-400 border w-fit p-4 bg-slate-900 ">
-            <img src={imageUrl} className="rounded-lg"></img>
+        <div className="rounded-lg border border-line w-fit p-4 bg-surface text-ink">
+            <Image src={imageUrl} alt="" width={320} height={180} unoptimized className="rounded-lg" />
             <h1>{name}</h1>
             <h1>AQI: {aqi}</h1>
             <h1>Primary Pollutant: {pollutant}</h1>
