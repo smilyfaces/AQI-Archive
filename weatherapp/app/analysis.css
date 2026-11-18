@@ -1,4 +1,7 @@
-.insights-content { margin-block-start: 1.5rem; }
+.insights-content {
+  --analysis-anchor-offset: calc(var(--header-offset) + var(--analysis-toolbar-height, 12rem) + .75rem);
+  margin-block-start: 1.5rem;
+}
 .insights-content .insights-toolbar {
   position: sticky;
   top: var(--header-offset);
@@ -11,8 +14,8 @@
 .insights-content .analysis-scope { margin-top: .3rem; color: var(--accent-mark); font-weight: 700; }
 .analysis-layout { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: 1.25rem; }
 .analysis-body { min-width: 0; }
-.analysis-section { scroll-margin-top: 13rem; margin-block-end: 1.3rem; }
-.analysis-nav { position: sticky; top: 13rem; align-self: start; display: grid; gap: .25rem; padding-block: .4rem; }
+.analysis-section { scroll-margin-top: var(--analysis-anchor-offset); margin-block-end: 1.3rem; }
+.analysis-nav { position: sticky; top: var(--analysis-anchor-offset); align-self: start; display: grid; gap: .25rem; padding-block: .4rem; }
 .analysis-nav a {
   display: block;
   padding: .4rem .6rem;
@@ -80,7 +83,6 @@
   .insights-content .sample-size-control select { width: 100%; min-height: 2.15rem; }
   .insights-content .insights-toolbar-controls .segmented-control { display: none; }
   .insights-content .analysis-mobile-period { display: flex; }
-  .analysis-section { scroll-margin-top: 17rem; }
   .analysis-section .chart-heading { flex-wrap: wrap; }
   .analysis-kpis > div { padding: .6rem; }
 }
