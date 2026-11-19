@@ -47,7 +47,17 @@ export function SavedDashboard({cities,error,localFallback}:{cities:City[];error
 
   const comparisonRows=useMemo(()=>{
     if(windowMode==="all"||compared.length<2)return Object.fromEntries(compared.map(city=>[city.slug,payload[city.slug]??[]]));
-    const bounds=compared.map(city=>{const rows=payload[city.slug]??[];return rows.length?[Date.parse(rows[0].recorded_at),Date.parse(rows.at(-1)!.recorded_at)] as const:null;}).filter((value):value is readonly [number,number]=>value!==null);
+    const bounds = compared.flatMap(city => {
+      let first = Infinity;
+      let last = -Infinity;
+      for (const row of payload[city.slug] ?? []) {
+        const timestamp = Date.parse(row.recorded_at);
+        if (!Number.isFinite(timestamp)) continue;
+        first = Math.min(first, timestamp);
+        last = Math.max(last, timestamp);
+      }
+      return first <= last ? [[first, last] as const] : [];
+    });
     if(bounds.length<2)return Object.fromEntries(compared.map(city=>[city.slug,[]]));
     const start=Math.max(...bounds.map(([first])=>first)),end=Math.min(...bounds.map(([,last])=>last));
     if(start>end)return Object.fromEntries(compared.map(city=>[city.slug,[]]));
