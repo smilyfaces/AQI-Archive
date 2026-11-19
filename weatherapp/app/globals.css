@@ -80,7 +80,7 @@ h1 { max-width: 750px; margin-bottom: 10px; font-size: clamp(2.2rem, 4.4vw, 3.2r
 .card-link-hit:focus-visible { outline-offset: -4px; }
 .save-button { position: relative; z-index: 3; display: inline-grid; flex: 0 0 auto; width: 44px; height: 44px; place-items: center; border: 1px solid transparent; border-radius: var(--r-round); background: transparent; color: var(--ink-muted); cursor: pointer; pointer-events: auto; }
 .save-button:hover { border-color: var(--border); background: var(--surface-2); color: var(--accent-hover); }
-.save-button.is-saved { background: color-mix(in srgb, var(--accent-soft) 55%, var(--surface)); color: var(--accent-hover); }
+.save-button.is-saved { background: var(--accent-rose-soft); color: var(--accent-rose-ink); }
 .stale-tag, .manual-tag, .source-note { display: inline-flex; align-items: center; min-height: 24px; padding: 2px 8px; border-radius: var(--r-pill); background: var(--warning-bg); color: var(--ink); font-weight: 600; white-space: nowrap; }
 .manual-tag, .source-note { background: var(--surface-2); color: var(--ink-muted); font-weight: 500; }
 .tone-good { --aqi-color: var(--aqi-good); }
@@ -133,7 +133,7 @@ h1 { max-width: 750px; margin-bottom: 10px; font-size: clamp(2.2rem, 4.4vw, 3.2r
 .insights-toolbar p, .insight-heading p, .chart-heading p { margin: 0; color: var(--ink-muted); font-size: .9rem; }
 .segmented-control { display: flex; flex-wrap: wrap; gap: 3px; padding: 4px; border-radius: var(--r-pill); background: var(--surface-2); }
 .segmented-control button { min-height: 38px; padding: 0 13px; border: 0; border-radius: var(--r-pill); background: transparent; color: var(--ink-muted); font-size: .87rem; font-weight: 600; cursor: pointer; }
-.segmented-control button.selected { background: var(--surface); box-shadow: var(--shadow-1); color: var(--ink); }
+.segmented-control button.selected { background: var(--accent-rose-soft); box-shadow: var(--shadow-1); color: var(--accent-rose-ink); }
 .insights-toolbar-controls { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
 .sample-size-control { display: flex; align-items: center; gap: 8px; color: var(--ink-muted); font-size: .84rem; font-weight: 650; white-space: nowrap; }
 .sample-size-control select { min-height: 42px; padding: 8px 30px 8px 11px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); color: var(--ink); }

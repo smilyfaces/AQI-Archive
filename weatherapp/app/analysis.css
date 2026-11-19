@@ -25,7 +25,7 @@
   text-decoration: none;
   white-space: nowrap;
 }
-.analysis-nav a[aria-current] { border-color: var(--accent-mark); background: var(--surface-2); color: var(--ink); font-weight: 700; }
+.analysis-nav a[aria-current] { border-color: var(--accent-rose-ink); background: var(--accent-rose-soft); color: var(--accent-rose-ink); font-weight: 700; }
 .analysis-section .insight-section, .analysis-section .chart-panel {
   border: var(--hairline) solid var(--border);
   box-shadow: none;

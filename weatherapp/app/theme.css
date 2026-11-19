@@ -35,6 +35,8 @@
   --accent-mark: var(--palette-teal);
   --accent-hover: var(--palette-teal-dark);
   --accent-rose: var(--palette-bubble-gum);
+  --accent-rose-soft: color-mix(in srgb, var(--palette-cotton-candy) 65%, var(--surface));
+  --accent-rose-ink: var(--palette-rose);
   --focus: var(--palette-teal);
   --danger: var(--palette-rose);
   --success: var(--palette-teal);
