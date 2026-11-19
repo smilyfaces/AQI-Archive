@@ -1,6 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
+import { useSyncExternalStore } from "react";
 import { ReadingStatus } from "@/components/ReadingStatus";
 import { CityCard } from "@/components/CityCard";
 import { FilterBar, readFilters } from "@/components/FilterBar";
@@ -25,6 +26,9 @@ const stateNames: Record<string, string> = {
 };
 const stateName = (code: string) => stateNames[code] ?? code;
 const names = new Intl.Collator("en-US");
+const subscribeToTimeZone = () => () => {};
+const getLocalTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+const getServerTimeZone = () => "UTC";
 
 export function HomeDashboard({ cities, error, localFallback }: { cities: City[]; error: string | null; localFallback: boolean }) {
   const params = useSearchParams();
@@ -75,6 +79,11 @@ export function HomeDashboard({ cities, error, localFallback }: { cities: City[]
     city.latest && (!latest?.latest || city.latest.recorded_at > latest.latest.recorded_at) ? city : latest
   ), undefined);
   const last = latestCity?.latest?.recorded_at;
+  const timeZone = useSyncExternalStore(subscribeToTimeZone, getLocalTimeZone, getServerTimeZone);
+  const latestReading = last && new Intl.DateTimeFormat("en-US", {
+    year: "numeric", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit", timeZoneName: "short", timeZone,
+  }).format(new Date(last));
   const facets = [
     { key: "pollutant", options: pollutant },
     { key: "category", options: aqiCategories.map(({ key, label }) => ({ value: key, label })) },
@@ -93,7 +102,7 @@ export function HomeDashboard({ cities, error, localFallback }: { cities: City[]
     <div className="page-container home-directory">
       <header className="directory-heading">
         <h1>Air quality across {cities.length} US cities</h1>
-        <p>{last ? <><ReadingStatus recordedAt={last} stale={latestCity?.stale} />Latest reading <time dateTime={last}>{new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(last))} UTC</time></> : "No readings yet"}</p>
+        <p>{last ? <><ReadingStatus recordedAt={last} stale={latestCity?.stale} />Latest reading <time dateTime={last}>{latestReading}</time></> : "No readings yet"}</p>
       </header>
       {error && <p className="error-panel" role="alert">{error}</p>}
       {localFallback && <p className="notice-panel">Showing the supplied manual readings until live data is available.</p>}
