@@ -8,14 +8,12 @@ export function AnalysisNavigation({ prefix, hasModels }: { prefix: string; hasM
 
   useEffect(() => {
     const workspace = nav.current?.closest<HTMLElement>(".insights-content");
-    const toolbar = workspace?.querySelector<HTMLElement>(".insights-toolbar");
-    if (!workspace || !toolbar) return;
+    if (!workspace) return;
     const sections = [...workspace.querySelectorAll<HTMLElement>("[data-analysis-section]")];
+    if (!sections.length) return;
     let observer: IntersectionObserver | undefined;
 
     function updateOffset() {
-      if (!workspace || !toolbar || !sections.length) return;
-      workspace.style.setProperty("--analysis-toolbar-height", `${toolbar.offsetHeight}px`);
       const anchorOffset = parseFloat(getComputedStyle(sections[0]).scrollMarginTop);
       const top = Math.min(window.innerHeight - 2, Math.ceil(anchorOffset) + 8);
       const bottom = window.innerHeight - top - 1;
@@ -28,12 +26,9 @@ export function AnalysisNavigation({ prefix, hasModels }: { prefix: string; hasM
       sections.forEach(section => observer?.observe(section));
     }
 
-    const resize = new ResizeObserver(updateOffset);
     updateOffset();
-    resize.observe(toolbar);
     window.addEventListener("resize", updateOffset);
     return () => {
-      resize.disconnect();
       observer?.disconnect();
       window.removeEventListener("resize", updateOffset);
     };

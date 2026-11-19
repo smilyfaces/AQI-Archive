@@ -1,6 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
+import { ReadingStatus } from "@/components/ReadingStatus";
 import { CityCard } from "@/components/CityCard";
 import { FilterBar, readFilters } from "@/components/FilterBar";
 import { useSavedCities } from "@/components/SavedCitiesProvider";
@@ -70,7 +71,10 @@ export function HomeDashboard({ cities, error, localFallback }: { cities: City[]
     const difference = (a.latest?.aqi ?? 0) - (b.latest?.aqi ?? 0);
     return (filters.sort === "aqi-desc" ? -difference : difference) || byName;
   });
-  const last = cities.map(city => city.latest?.recorded_at).filter(Boolean).sort().at(-1);
+  const latestCity = cities.reduce<City | undefined>((latest, city) => (
+    city.latest && (!latest?.latest || city.latest.recorded_at > latest.latest.recorded_at) ? city : latest
+  ), undefined);
+  const last = latestCity?.latest?.recorded_at;
   const facets = [
     { key: "pollutant", options: pollutant },
     { key: "category", options: aqiCategories.map(({ key, label }) => ({ value: key, label })) },
@@ -89,18 +93,18 @@ export function HomeDashboard({ cities, error, localFallback }: { cities: City[]
     <div className="page-container home-directory">
       <header className="directory-heading">
         <h1>Air quality across {cities.length} US cities</h1>
-        <p>{last ? <>Latest reading <time dateTime={last}>{new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(last))} UTC</time></> : "No readings yet"}</p>
+        <p>{last ? <><ReadingStatus recordedAt={last} stale={latestCity?.stale} />Latest reading <time dateTime={last}>{new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(last))} UTC</time></> : "No readings yet"}</p>
       </header>
       {error && <p className="error-panel" role="alert">{error}</p>}
       {localFallback && <p className="notice-panel">Showing the supplied manual readings until live data is available.</p>}
       <FilterBar filters={filters} update={update} options={{ pollutant, state, region }} />
       <div className="directory-results">
         <span aria-live="polite">{items.length} of {cities.length} cities</span>
-        {active.map(item => <button key={item.key} type="button" onClick={item.remove} aria-label={`Remove filter ${item.label}`}>{item.label} ×</button>)}
-        {(active.length > 0 || filters.sort !== "aqi-asc") && <button type="button" onClick={() => update(null)}>Clear all</button>}
+        {active.map(item => <button className="filter-control filter-chip" key={item.key} type="button" onClick={item.remove} aria-label={`Remove filter ${item.label}`}>{item.label} ×</button>)}
+        {(active.length > 0 || filters.sort !== "aqi-asc") && <button className="filter-control" type="button" onClick={() => update(null)}>Clear all</button>}
       </div>
       {items.length > 0 ? <div className="city-list">{items.map((city, index) => <CityCard key={city.slug} city={city} priority={index < 2} />)}</div>
-        : <div className="empty-panel"><strong>No cities match these filters</strong><button className="button secondary" onClick={() => update(null)}>Clear filters</button></div>}
+        : <div className="empty-panel"><strong>No cities match these filters</strong><button className="filter-control" onClick={() => update(null)}>Clear filters</button></div>}
       <p className="data-footnote">Air quality readings are preliminary. Nearby monitors may not represent conditions at a specific address.</p>
     </div>
   );

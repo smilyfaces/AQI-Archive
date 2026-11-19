@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { CloudSun } from "lucide-react";
 import { Instrument_Sans, Fraunces } from "next/font/google";
 import { SavedCitiesProvider } from "@/components/SavedCitiesProvider";
 import { AppHeader } from "@/components/AppHeader";
@@ -31,7 +32,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <a className="skip-link" href="#main-content">Skip to main content</a>
           <AppHeader />
           {children}
-          <footer className="site-footer"><div className="footer-inner"><div className="footer-brand"><span className="brand-mark small"><span>air</span></span><span>Airwise</span></div><p>Weather from the National Weather Service. Air quality from EPA AirNow and OpenAQ. Readings come from nearby monitors and may differ from a specific address. AirNow data are preliminary. Not medical advice.</p><a className="footer-credits" href="/cities/CREDITS.md">City photo credits</a></div></footer>
+          <footer className="site-footer"><div className="footer-inner"><div className="footer-brand"><span className="brand-mark small"><CloudSun size={18} aria-hidden="true" /></span><span>Airwise</span></div><p>Weather from the National Weather Service. Air quality from EPA AirNow and OpenAQ. Readings come from nearby monitors and may differ from a specific address. AirNow data are preliminary. Not medical advice.</p><a className="footer-credits" href="/cities/CREDITS.md">City photo credits</a></div></footer>
         </SavedCitiesProvider>
       </body>
     </html>

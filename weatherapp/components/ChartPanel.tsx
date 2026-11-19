@@ -8,11 +8,17 @@ const chartTypes = {
   distribution: "Distribution",
   scatter: "Scatter and regression",
   patterns: "Time patterns",
-  rolling: "Rolling AQI averages",
+  rolling: "Rolling averages",
 } as const;
 
-export type ChartConfig = { type: keyof typeof chartTypes; metric: MetricKey; xMetric: MetricKey; secondMetric?: MetricKey };
-type DefaultChart = "series" | "distribution";
+export const rollingWindowOptions = {
+  both: "24 hours and 7 days",
+  short: "24 hours",
+  long: "7 days",
+} as const;
+export type RollingWindow = keyof typeof rollingWindowOptions;
+export type ChartConfig = { type: keyof typeof chartTypes; metric: MetricKey; xMetric: MetricKey; secondMetric?: MetricKey; rollingWindow?: RollingWindow };
+type DefaultChart = "series" | "distribution" | "scatter" | "rolling";
 type Panel = { id: number; config: ChartConfig; full: boolean; original?: DefaultChart };
 const initialConfig: ChartConfig = { type: "series", metric: "aqi", xMetric: "temperature_c" };
 const labels = new Map(NUMERIC_METRICS.map(metric => [metric.key, metric.label]));
@@ -25,10 +31,12 @@ export function ChartWorkspace({ render, defaults, dataset }: {
   const [panels, setPanels] = useState<Panel[]>([
     { id: 1, config: initialConfig, full: false, original: "series" },
     { id: 2, config: { ...initialConfig, type: "distribution" }, full: false, original: "distribution" },
+    { id: 3, config: { ...initialConfig, type: "scatter" }, full: false, original: "scatter" },
+    { id: 4, config: { ...initialConfig, type: "rolling" }, full: false, original: "rolling" },
   ]);
   const [editing, setEditing] = useState<number | null>(null);
   const [draft, setDraft] = useState(initialConfig);
-  const ids = useRef(2);
+  const ids = useRef(4);
   const dialog = useRef<HTMLDialogElement>(null);
 
   function open(panel?: Panel) {
@@ -53,11 +61,14 @@ export function ChartWorkspace({ render, defaults, dataset }: {
       const { type, metric, xMetric, secondMetric } = config;
       const variables = type === "series" && secondMetric && secondMetric !== metric
         ? `${labels.get(metric)} and ${labels.get(secondMetric)}` : labels.get(metric);
-      const title = type === "scatter" ? `${labels.get(metric)} vs ${labels.get(xMetric)}`
+      const title = type === "scatter" ? (original ? chartTypes.scatter : `${labels.get(metric)} vs ${labels.get(xMetric)}`)
         : type === "series" || type === "distribution" ? `${variables} · ${chartTypes[type]}` : chartTypes[type];
       return <article className={`chart-panel ${panel.full ? "span-12" : "span-6"}`} key={panel.id}>
-        <div className="chart-heading">
-          <h3>{title}</h3>
+        <div className={`chart-heading${type === "scatter" ? " chart-heading-scatter" : ""}`}>
+          <div>
+            <h3>{title}</h3>
+            {type === "scatter" && <p>Choose two metrics to inspect their relationship.</p>}
+          </div>
           <details className="chart-panel-menu">
             <summary aria-label={`Options for ${title}`}>Options</summary>
             <div>
@@ -74,6 +85,13 @@ export function ChartWorkspace({ render, defaults, dataset }: {
           </details>
         </div>
         {original?.controls}
+        {!original && type === "rolling" && <div className="pair-selects">
+          <MetricSelect label="Rolling variable" value={metric} change={nextMetric => {
+            setPanels(current => current.map(item => item.id === panel.id
+              ? { ...item, config: { ...item.config, metric: nextMetric } }
+              : item));
+          }} />
+        </div>}
         {original ? original.chart : render(config)}
         <p className="plain-caption workspace-source">{dataset}</p>
       </article>;
@@ -94,10 +112,13 @@ export function ChartWorkspace({ render, defaults, dataset }: {
           {Object.entries(chartTypes).map(([type, label]) => <option value={type} key={type}>{label}</option>)}
         </select></label>
         {draft.type === "scatter" && <MetricSelect label="X axis" value={draft.xMetric} change={xMetric => setDraft({ ...draft, xMetric })} />}
-        {["series", "distribution", "scatter"].includes(draft.type) && <MetricSelect label={draft.type === "scatter" ? "Y axis" : "Variable"} value={draft.metric} change={metric => setDraft({ ...draft, metric })} />}
+        {draft.type !== "patterns" && <MetricSelect label={draft.type === "scatter" ? "Y axis" : "Variable"} value={draft.metric} change={metric => setDraft({ ...draft, metric })} />}
         {draft.type === "series" && <label>Second variable<select value={draft.secondMetric ?? ""} onChange={event => setDraft({ ...draft, secondMetric: (event.target.value || undefined) as MetricKey | undefined })}>
           <option value="">None</option>
           {NUMERIC_METRICS.filter(metric => metric.key !== draft.metric).map(metric => <option key={metric.key} value={metric.key}>{metric.label}</option>)}
+        </select></label>}
+        {draft.type === "rolling" && <label>Averaging window<select value={draft.rollingWindow ?? "both"} onChange={event => setDraft({ ...draft, rollingWindow: event.target.value as RollingWindow })}>
+          {Object.entries(rollingWindowOptions).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select></label>}
         <div className="filter-sheet-actions">
           <button type="button" className="button secondary" onClick={() => dialog.current?.close()}>Cancel</button>
@@ -109,7 +130,7 @@ export function ChartWorkspace({ render, defaults, dataset }: {
 }
 
 function MetricSelect({ label, value, change }: { label: string; value: MetricKey; change: (key: MetricKey) => void }) {
-  return <label>{label}<select value={value} onChange={event => change(event.target.value as MetricKey)}>
+  return <label><span>{label}</span><select value={value} onChange={event => change(event.target.value as MetricKey)}>
     {NUMERIC_METRICS.map(metric => <option key={metric.key} value={metric.key}>{metric.label}</option>)}
   </select></label>;
 }

@@ -1,17 +1,18 @@
 :root {
   color-scheme: light;
   /* Cotton Candy palette primitives */
-  --palette-bubble-gum: #f3a2be;
-  --palette-cotton-candy: #ffd3dd;
-  --palette-candy-floss: #f0f9f8;
-  --palette-mint: #c6e6e3;
-  --palette-wintergreen: #81bfb7;
+  --palette-bubble-gum: #eddae2;
+  --palette-cotton-candy: #f4e6eb;
+  --palette-candy-floss: #faf5f7;
+  --palette-mint: #e0ede9;
   --palette-ink: #463c3f;
   --palette-paper: #fffdfc;
   --palette-muted: #65595d;
-  --palette-teal: #236d64;
-  --palette-teal-dark: #18564e;
-  --palette-rose: #a13860;
+  --palette-teal: #386960;
+  --palette-green: #38834d;
+  --palette-rose-dark: #694054;
+  --palette-rose: #86536b;
+  --palette-mauve: #79647e;
   --palette-gold: #826019;
   --palette-slate: #506478;
   --palette-plum: #72477a;
@@ -24,27 +25,27 @@
   /* Semantic tokens */
   --bg: var(--palette-candy-floss);
   --surface: var(--palette-paper);
-  --surface-2: color-mix(in srgb, var(--palette-mint) 38%, var(--surface));
+  --surface-2: color-mix(in srgb, var(--palette-cotton-candy) 48%, var(--surface));
   --ink: var(--palette-ink);
   --ink-muted: var(--palette-muted);
   --ink-faint: var(--palette-muted);
-  --border: color-mix(in srgb, var(--ink) 13%, transparent);
-  --border-strong: color-mix(in srgb, var(--ink) 28%, transparent);
-  --accent-soft: var(--palette-mint);
-  --accent-fill: var(--palette-wintergreen);
-  --accent-mark: var(--palette-teal);
-  --accent-hover: var(--palette-teal-dark);
-  --accent-rose: var(--palette-bubble-gum);
+  --border: color-mix(in srgb, var(--tertiary) 15%, transparent);
+  --border-strong: color-mix(in srgb, var(--tertiary) 32%, transparent);
+  --accent-soft: var(--palette-cotton-candy);
+  --accent-fill: var(--palette-bubble-gum);
+  --accent-mark: var(--palette-rose);
+  --accent-ink: var(--palette-rose-dark);
   --accent-rose-soft: color-mix(in srgb, var(--palette-cotton-candy) 65%, var(--surface));
-  --accent-rose-ink: var(--palette-rose);
-  --focus: var(--palette-teal);
+  --tertiary: var(--palette-mauve);
+  --accent-rose-ink: var(--accent-ink);
+  --focus: var(--tertiary);
   --danger: var(--palette-rose);
-  --success: var(--palette-teal);
+  --success: var(--palette-green);
   --warning-bg: var(--palette-cotton-candy);
   --warning-ink: var(--palette-gold);
   --scrim: color-mix(in srgb, var(--ink) 55%, transparent);
-  --chart-1: var(--palette-teal);
-  --chart-2: var(--palette-rose);
+  --chart-1: var(--palette-rose);
+  --chart-2: var(--palette-teal);
   --chart-3: var(--palette-gold);
   --chart-4: var(--palette-slate);
   --chart-5: var(--palette-plum);
@@ -63,6 +64,9 @@
   --shadow-1: 0 1px 3px var(--border);
   --shadow-2: 0 4px 16px var(--border);
   --shadow-3: 0 12px 32px var(--border-strong);
+  --control-accent: color-mix(in srgb, var(--tertiary) 40%, transparent);
+  --shadow-control-accent: inset -2px -2px var(--control-accent);
+  --shadow-hover: var(--shadow-control-accent), inset 0 0 0 1px var(--border-strong), var(--shadow-1);
   --font-body: var(--font-ui), system-ui, sans-serif;
   --font-display: var(--font-editorial), Georgia, serif;
   --text-meta: .8125rem;
@@ -76,25 +80,25 @@
 
 /* Alternate schemes override palette primitives here. */
 [data-theme="rose"] {
-  --palette-candy-floss: #fff3f5;
-  --palette-mint: #f9dce4;
-  --palette-wintergreen: #edb2c5;
+  --palette-candy-floss: #fcf2f6;
+  --palette-cotton-candy: #f3e0e8;
+  --palette-bubble-gum: #e9d1dd;
 }
 
-/* EPA scale, do not tie to the theme palette. Darker marks preserve contrast. */
+/* EPA category hues with muted fills and deeper marks for contrast. */
 :root {
-  --aqi-good: #00e400;
-  --aqi-moderate: #ffff00;
-  --aqi-sensitive: #ff7e00;
-  --aqi-unhealthy: #ff0000;
-  --aqi-very-unhealthy: #8f3f97;
-  --aqi-hazardous: #7e0023;
+  --aqi-good: #dcead9;
+  --aqi-moderate: #f4ebcc;
+  --aqi-sensitive: #f3dfcc;
+  --aqi-unhealthy: #efd7d7;
+  --aqi-very-unhealthy: #e9dbea;
+  --aqi-hazardous: #e9d3da;
   --aqi-mark-good: #228024;
   --aqi-mark-moderate: #826600;
   --aqi-mark-sensitive: #a84c00;
   --aqi-mark-unhealthy: #bd0000;
   --aqi-mark-very-unhealthy: #713178;
-  --aqi-mark-hazardous: var(--aqi-hazardous);
+  --aqi-mark-hazardous: #7e0023;
   --aqi-mark-unknown: var(--ink-muted);
   --aqi-ink-on-bright: #463c3f;
 }

@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { fromZonedTime } from "date-fns-tz";
 import { cityCatalog, manualLatest, type CitySummary } from "@/lib/catalog";
+import { READING_FRESHNESS_MS } from "@/lib/reading-freshness";
 import { getManualReadings } from "@/lib/manual-data";
 import { isMissingOptionalCityAnalysisColumn } from "@/lib/schema-compatibility";
 
@@ -99,7 +100,7 @@ export async function getCities(): Promise<{ cities: City[]; error: string | nul
   const latestBySlug = new Map((readings ?? []).map(row => [row.slug as string, row as Reading]));
   return { cities: cities.map(city => {
     const latest = latestBySlug.get(city.slug) ?? null;
-    return { ...city, latest, stale: latest ? Date.now() - new Date(latest.recorded_at).getTime() > 3*60*60*1000 : false } as City;
+    return { ...city, latest, stale: latest ? Date.now() - new Date(latest.recorded_at).getTime() > READING_FRESHNESS_MS : false } as City;
   }), error: null, localFallback: false };
 }
 
@@ -138,7 +139,7 @@ export async function getCity(slug: string): Promise<{ city: City | null; readin
     const city = localCities().find(item => item.slug === slug) ?? null;
     const readings = city ? getManualReadings(slug) : [];
     const latest = readings.at(-1) ?? null;
-    return { city: city ? { ...city, latest, stale: latest ? Date.now() - new Date(latest.recorded_at).getTime() > 3*60*60*1000 : false } : null, readings, error: null, localFallback: true, asOf:Date.now() };
+    return { city: city ? { ...city, latest, stale: latest ? Date.now() - new Date(latest.recorded_at).getTime() > READING_FRESHNESS_MS : false } : null, readings, error: null, localFallback: true, asOf:Date.now() };
   }
   const metadataCityResult=await db.from("cities").select("id,slug,name,state,lat,lon,timezone,data_source_note,region,climate_type,population,size_band").eq("slug", slug).maybeSingle();
   const cityResult=metadataColumnsMissing(metadataCityResult.error)?await db.from("cities").select("id,slug,name,state,lat,lon,timezone,data_source_note").eq("slug",slug).maybeSingle():metadataCityResult;
@@ -161,11 +162,11 @@ export async function getCity(slug: string): Promise<{ city: City | null; readin
   if (readingsError) return { city: null, readings: [], error: readingsError.message, localFallback: false, asOf:Date.now() };
   const readings = (rows ?? []) as Reading[];
   const latest = readings[0] ?? null;
-  return { city: { ...row, latest, stale: latest ? Date.now() - new Date(latest.recorded_at).getTime() > 3*60*60*1000 : false } as City, readings, error: null, localFallback: false, asOf:Date.now() };
+  return { city: { ...row, latest, stale: latest ? Date.now() - new Date(latest.recorded_at).getTime() > READING_FRESHNESS_MS : false } as City, readings, error: null, localFallback: false, asOf:Date.now() };
 }
 
 export type ArchiveFilters={from?:string;to?:string;timeFrom?:string;timeTo?:string;pollutant?:string;min?:string;max?:string;page?:number};
-export async function getArchive(slug:string,filters:ArchiveFilters={}) {
+export async function getArchive(slug:string,filters:ArchiveFilters={}, options:{pageSize?:number;before?:string}={}) {
   const db=publicDb();
   const cityResult=db?await db.from("cities").select("id,slug,name,state,timezone,data_source_note").eq("slug",slug).maybeSingle():null;
   let city:City|null;
@@ -173,13 +174,14 @@ export async function getArchive(slug:string,filters:ArchiveFilters={}) {
   if(cityResult?.data) city={...cityResult.data,latest:null} as City;
   else city=localCity(slug);
   if(!city)return {city:null,rows:[],total:0,error:null,page:1,localFallback:!db};
-  const page=Math.max(1,filters.page??1),size=50;
+  const page=Math.max(1,filters.page??1),size=options.pageSize??50;
   if(!db||!city.id){
-    const all=getManualReadings(slug);
+    const all=getManualReadings(slug).filter(row=>!options.before||Date.parse(row.recorded_at)<=Date.parse(options.before));
     const filtered=filterArchive(all,filters,city.timezone??"America/New_York");
     return {city,rows:filtered.slice((page-1)*size,page*size),total:filtered.length,error:null,page,localFallback:true};
   }
-  let query=db.from("readings").select("*",{count:"exact"}).eq("city_id",city.id).order("recorded_at",{ascending:false});
+  let query=db.from("readings").select("*",{count:"exact"}).eq("city_id",city.id).order("recorded_at",{ascending:false}).order("id",{ascending:false});
+  if(options.before)query=query.lte("recorded_at",options.before);
   const timezone=city.timezone??"America/New_York";
   if(filters.from)query=query.gte("recorded_at",fromZonedTime(`${filters.from}T00:00:00`,timezone).toISOString());
   if(filters.to)query=query.lte("recorded_at",fromZonedTime(`${filters.to}T23:59:59.999`,timezone).toISOString());
