@@ -1,60 +1,111 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { ArrowDownWideNarrow, ArrowUpWideNarrow, ChevronDown, SlidersHorizontal } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { ReadingStatus } from "@/components/ReadingStatus";
 import { CityCard } from "@/components/CityCard";
+import { FilterBar, readFilters } from "@/components/FilterBar";
 import { useSavedCities } from "@/components/SavedCitiesProvider";
 import type { City } from "@/lib/data";
+import { aqiCategories, aqiCategory } from "@/lib/theme";
 
-function CityGrid({ items }: { items: City[] }) { return <div className="city-grid">{items.map(city => <CityCard key={city.slug} city={city} />)}</div>; }
+const stateNames: Record<string, string> = {
+  AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas",
+  CA: "California", CO: "Colorado", CT: "Connecticut", DE: "Delaware",
+  DC: "District of Columbia", FL: "Florida", GA: "Georgia", HI: "Hawaii",
+  ID: "Idaho", IL: "Illinois", IN: "Indiana", IA: "Iowa",
+  KS: "Kansas", KY: "Kentucky", LA: "Louisiana", ME: "Maine",
+  MD: "Maryland", MA: "Massachusetts", MI: "Michigan", MN: "Minnesota",
+  MS: "Mississippi", MO: "Missouri", MT: "Montana", NE: "Nebraska",
+  NV: "Nevada", NH: "New Hampshire", NJ: "New Jersey", NM: "New Mexico",
+  NY: "New York", NC: "North Carolina", ND: "North Dakota", OH: "Ohio",
+  OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania", RI: "Rhode Island",
+  SC: "South Carolina", SD: "South Dakota", TN: "Tennessee", TX: "Texas",
+  UT: "Utah", VT: "Vermont", VA: "Virginia", WA: "Washington",
+  WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming",
+};
+const stateName = (code: string) => stateNames[code] ?? code;
+const names = new Intl.Collator("en-US");
 
 export function HomeDashboard({ cities, error, localFallback }: { cities: City[]; error: string | null; localFallback: boolean }) {
-  const [worstCount, setWorstCount] = useState(4);
-  const [bestCount, setBestCount] = useState(4);
-  const [sort, setSort] = useState("worst");
-  const [state, setState] = useState("all");
+  const params = useSearchParams();
+  const filters = readFilters(new URLSearchParams(params.toString()));
   const { saved } = useSavedCities();
-  const ranked = useMemo(() => cities.filter(city => city.latest?.aqi !== null && city.latest?.aqi !== undefined), [cities]);
-  const worst = useMemo(() => [...ranked].sort((a,b) => (b.latest?.aqi ?? -1) - (a.latest?.aqi ?? -1)), [ranked]);
-  const best = useMemo(() => [...ranked].sort((a,b) => (a.latest?.aqi ?? Infinity) - (b.latest?.aqi ?? Infinity)), [ranked]);
-  const states = useMemo(() => [...new Set(cities.map(city => city.state))].sort(), [cities]);
-  const allCities = useMemo(() => {
-    const list = cities.filter(city => state === "all" || city.state === state);
-    return list.sort((a,b) => {
-      if (sort === "az") return a.name.localeCompare(b.name);
-      if (sort === "saved") return Number(saved.includes(b.slug))-Number(saved.includes(a.slug)) || a.name.localeCompare(b.name);
-      const diff = (a.latest?.aqi ?? (sort === "best" ? Infinity : -Infinity)) - (b.latest?.aqi ?? (sort === "best" ? Infinity : -Infinity));
-      return sort === "best" ? diff : -diff;
-    });
-  }, [cities, sort, state, saved]);
-  const lastUpdate = cities.map(city => city.latest?.recorded_at).filter((v): v is string => !!v).sort().at(-1);
+  const update = (patch: Partial<typeof filters> | null) => {
+    const next = new URLSearchParams(window.location.search);
+    const values = patch ?? readFilters(new URLSearchParams());
+    for (const [key, value] of Object.entries(values)) {
+      const serialized = Array.isArray(value) ? value.join(",") : value === true ? "1" : value;
+      if (!serialized || (key === "sort" && serialized === "aqi-asc")) next.delete(key);
+      else next.set(key, String(serialized));
+    }
+    window.history.replaceState(null, "", `${window.location.pathname}${next.size ? `?${next}` : ""}${window.location.hash}`);
+  };
 
-  return <main id="main-content" className="page-main">
-    <div className="page-container">
-      <section className="welcome-row">
-        <div><p className="page-kicker">United States · Live conditions</p><h1>Air quality across US cities</h1><p className="page-lede">A clear view of the air and weather around the places you care about.</p></div>
-        <div className="update-panel"><span className="status-dot" aria-hidden="true" /><div><strong>{lastUpdate ? "Latest reading" : "Hourly city tracking"}</strong><span>{lastUpdate ? new Date(lastUpdate).toLocaleString(undefined,{dateStyle:"medium",timeStyle:"short"}) : "Readings appear here as sources report them."}</span></div></div>
-      </section>
-      {localFallback && <div className="notice-panel"><span>Showing the supplied manual recordings. Connect Supabase to load hourly city readings.</span></div>}
-      {error && <div className="error-panel" role="alert"><div><strong>City readings could not load.</strong><span>{error}</span></div><button className="button secondary" onClick={() => window.location.reload()}>Try again</button></div>}
+  const pollutantCounts = new Map<string, number>();
+  for (const { latest } of cities) {
+    const value = latest?.primary_pollutant;
+    if (value) pollutantCounts.set(value, (pollutantCounts.get(value) ?? 0) + 1);
+  }
+  const pollutant = [...pollutantCounts].sort(([a], [b]) => names.compare(a, b)).map(([value, count]) => ({ value, label: `${value} (${count})` }));
+  const state = [...new Set(cities.map(city => city.state))].sort().map(value => ({ value, label: stateName(value) }));
+  const region = [...new Set(cities.flatMap(city => city.region ? [city.region] : []))].sort().map(value => ({ value, label: value }));
+  const query = filters.q.trim().toLowerCase();
+  const items = cities.filter(city => {
+    const aqi = city.latest?.aqi ?? null;
+    return (!query || `${city.name} ${city.state} ${stateName(city.state)}`.toLowerCase().includes(query))
+      && (!filters.state.length || filters.state.includes(city.state))
+      && (!filters.region.length || filters.region.includes(city.region ?? ""))
+      && (!filters.pollutant.length || filters.pollutant.includes(city.latest?.primary_pollutant ?? ""))
+      && (!filters.category.length || filters.category.includes(aqiCategory(aqi).key))
+      && (!filters.saved || saved.includes(city.slug))
+      && (!filters.readings || city.latest !== null);
+  }).sort((a, b) => {
+    const missing = Number(a.latest === null) - Number(b.latest === null);
+    if (missing) return missing;
+    const byName = names.compare(a.name, b.name) || names.compare(a.state, b.state);
+    if (filters.sort === "name") return byName;
+    if (filters.sort === "state") return names.compare(stateName(a.state), stateName(b.state)) || byName;
+    if (filters.sort === "recent") return ((Date.parse(b.latest?.recorded_at ?? "") || 0) - (Date.parse(a.latest?.recorded_at ?? "") || 0)) || byName;
+    const missingAqi = Number(a.latest?.aqi == null) - Number(b.latest?.aqi == null);
+    if (missingAqi) return missingAqi;
+    const difference = (a.latest?.aqi ?? 0) - (b.latest?.aqi ?? 0);
+    return (filters.sort === "aqi-desc" ? -difference : difference) || byName;
+  });
+  const latestCity = cities.reduce<City | undefined>((latest, city) => (
+    city.latest && (!latest?.latest || city.latest.recorded_at > latest.latest.recorded_at) ? city : latest
+  ), undefined);
+  const last = latestCity?.latest?.recorded_at;
+  const facets = [
+    { key: "pollutant", options: pollutant },
+    { key: "category", options: aqiCategories.map(({ key, label }) => ({ value: key, label })) },
+    { key: "state", options: state },
+    { key: "region", options: region },
+  ] as const;
+  const active = facets.flatMap(({ key, options }) => filters[key].map(value => ({
+    key: `${key}:${value}`, label: options.find(option => option.value === value)?.label ?? value,
+    remove: () => update({ [key]: filters[key].filter(item => item !== value) }),
+  })));
+  if (filters.q) active.push({ key: "query", label: filters.q, remove: () => update({ q: "" }) });
+  if (filters.saved) active.push({ key: "saved", label: "Saved only", remove: () => update({ saved: false }) });
+  if (filters.readings) active.push({ key: "readings", label: "Has reading", remove: () => update({ readings: false }) });
 
-      <section className="rank-section" aria-labelledby="worst-heading">
-        <div className="section-heading"><div className="section-icon warning-icon"><ArrowDownWideNarrow size={20} aria-hidden="true" /></div><div><h2 id="worst-heading">Worst air quality</h2><p>Places with the highest recorded AQI.</p></div></div>
-        {worst.length ? <><CityGrid items={worst.slice(0,worstCount)} />{worstCount < worst.length && <button className="button secondary load-button" onClick={() => setWorstCount(value => value+4)}>Load more cities <ChevronDown size={16} /></button>}</> : <div className="empty-panel"><strong>No ranked readings yet</strong><span>Current AQI readings will appear here when a monitor reports data.</span></div>}
-      </section>
-
-      <section className="rank-section" aria-labelledby="best-heading">
-        <div className="section-heading"><div className="section-icon clean-icon"><ArrowUpWideNarrow size={20} aria-hidden="true" /></div><div><h2 id="best-heading">Best air quality</h2><p>Places with the lowest recorded AQI.</p></div></div>
-        {best.length ? <><CityGrid items={best.slice(0,bestCount)} />{bestCount < best.length && <button className="button secondary load-button" onClick={() => setBestCount(value => value+4)}>Load more cities <ChevronDown size={16} /></button>}</> : <div className="empty-panel"><strong>No ranked readings yet</strong><span>Current AQI readings will appear here when a monitor reports data.</span></div>}
-      </section>
-
-      <section className="all-cities-section" aria-labelledby="all-cities-heading">
-        <div className="all-cities-top"><div className="section-heading"><div className="section-icon"><SlidersHorizontal size={19} aria-hidden="true" /></div><div><h2 id="all-cities-heading">All cities</h2><p>{allCities.length} tracked locations, with gaps shown as N/A.</p></div></div>
-          <div className="filters-row"><label className="select-wrap"><span className="sr-only">Sort cities</span><select value={sort} onChange={event => setSort(event.target.value)}><option value="worst">Worst AQI</option><option value="best">Best AQI</option><option value="az">A–Z</option><option value="saved">Saved first</option></select><ChevronDown size={15} /></label><label className="select-wrap"><span className="sr-only">Filter by state</span><select value={state} onChange={event => setState(event.target.value)}><option value="all">All states</option>{states.map(value => <option key={value} value={value}>{value}</option>)}</select><ChevronDown size={15} /></label></div>
-        </div>
-        {allCities.length ? <CityGrid items={allCities} /> : <div className="empty-panel"><strong>No cities match this filter.</strong><span>Choose another state to see tracked locations.</span><button className="button secondary" onClick={() => setState("all")}>Show all states</button></div>}
-      </section>
+  return (
+    <div className="page-container home-directory">
+      <header className="directory-heading">
+        <h1>Air quality across {cities.length} US cities</h1>
+        <p>{last ? <><ReadingStatus recordedAt={last} stale={latestCity?.stale} />Latest reading <time dateTime={last}>{new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(last))} UTC</time></> : "No readings yet"}</p>
+      </header>
+      {error && <p className="error-panel" role="alert">{error}</p>}
+      {localFallback && <p className="notice-panel">Showing the supplied manual readings until live data is available.</p>}
+      <FilterBar filters={filters} update={update} options={{ pollutant, state, region }} />
+      <div className="directory-results">
+        <span aria-live="polite">{items.length} of {cities.length} cities</span>
+        {active.map(item => <button className="filter-control filter-chip" key={item.key} type="button" onClick={item.remove} aria-label={`Remove filter ${item.label}`}>{item.label} ×</button>)}
+        {(active.length > 0 || filters.sort !== "aqi-asc") && <button className="filter-control" type="button" onClick={() => update(null)}>Clear all</button>}
+      </div>
+      {items.length > 0 ? <div className="city-list">{items.map((city, index) => <CityCard key={city.slug} city={city} priority={index < 2} />)}</div>
+        : <div className="empty-panel"><strong>No cities match these filters</strong><button className="filter-control" onClick={() => update(null)}>Clear filters</button></div>}
       <p className="data-footnote">Air quality readings are preliminary. Nearby monitors may not represent conditions at a specific address.</p>
     </div>
-  </main>;
+  );
 }

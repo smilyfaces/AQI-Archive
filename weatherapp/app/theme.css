@@ -1,0 +1,121 @@
+:root {
+  color-scheme: light;
+  /* Cotton Candy palette primitives */
+  --palette-bubble-gum: #eddae2;
+  --palette-cotton-candy: #f4e6eb;
+  --palette-candy-floss: #faf5f7;
+  --palette-mint: #e0ede9;
+  --palette-ink: #463c3f;
+  --palette-paper: #fffdfc;
+  --palette-muted: #65595d;
+  --palette-teal: #386960;
+  --palette-green: #38834d;
+  --palette-rose-dark: #694054;
+  --palette-rose: #86536b;
+  --palette-mauve: #79647e;
+  --palette-gold: #826019;
+  --palette-slate: #506478;
+  --palette-plum: #72477a;
+  --palette-rust: #944b35;
+  --palette-olive: #5c6c32;
+  --palette-indigo: #525587;
+  --palette-cyan: #296975;
+  --palette-brown: #795747;
+
+  /* Semantic tokens */
+  --bg: var(--palette-candy-floss);
+  --surface: var(--palette-paper);
+  --surface-2: color-mix(in srgb, var(--palette-cotton-candy) 48%, var(--surface));
+  --ink: var(--palette-ink);
+  --ink-muted: var(--palette-muted);
+  --ink-faint: var(--palette-muted);
+  --border: color-mix(in srgb, var(--tertiary) 15%, transparent);
+  --border-strong: color-mix(in srgb, var(--tertiary) 32%, transparent);
+  --accent-soft: var(--palette-cotton-candy);
+  --accent-fill: var(--palette-bubble-gum);
+  --accent-mark: var(--palette-rose);
+  --accent-ink: var(--palette-rose-dark);
+  --accent-rose-soft: color-mix(in srgb, var(--palette-cotton-candy) 65%, var(--surface));
+  --tertiary: var(--palette-mauve);
+  --accent-rose-ink: var(--accent-ink);
+  --focus: var(--tertiary);
+  --danger: var(--palette-rose);
+  --success: var(--palette-green);
+  --warning-bg: var(--palette-cotton-candy);
+  --warning-ink: var(--palette-gold);
+  --scrim: color-mix(in srgb, var(--ink) 55%, transparent);
+  --chart-1: var(--palette-rose);
+  --chart-2: var(--palette-teal);
+  --chart-3: var(--palette-gold);
+  --chart-4: var(--palette-slate);
+  --chart-5: var(--palette-plum);
+  --chart-6: var(--palette-rust);
+  --chart-7: var(--palette-olive);
+  --chart-8: var(--palette-indigo);
+  --chart-9: var(--palette-cyan);
+  --chart-10: var(--palette-brown);
+  --r-sm: .25rem;
+  --r-md: .5rem;
+  --r-lg: .75rem;
+  --r-xl: 1rem;
+  --r-pill: 999px;
+  --r-round: 50%;
+  --shadow-focus: 0 0 0 2px color-mix(in srgb, var(--focus) 30%, transparent);
+  --shadow-1: 0 1px 3px var(--border);
+  --shadow-2: 0 4px 16px var(--border);
+  --shadow-3: 0 12px 32px var(--border-strong);
+  --control-accent: color-mix(in srgb, var(--tertiary) 40%, transparent);
+  --shadow-control-accent: inset -2px -2px var(--control-accent);
+  --shadow-hover: var(--shadow-control-accent), inset 0 0 0 1px var(--border-strong), var(--shadow-1);
+  --font-body: var(--font-ui), system-ui, sans-serif;
+  --font-display: var(--font-editorial), Georgia, serif;
+  --text-meta: .8125rem;
+  --text-label: .875rem;
+  --text-body: 1rem;
+  --text-title: clamp(2.3rem, 4.3vw, 3.9rem);
+  --card-padding: clamp(.875rem, 2vw, 1.5rem);
+  --hairline: 1px;
+  --header-offset: 4.5rem;
+}
+
+/* Alternate schemes override palette primitives here. */
+[data-theme="rose"] {
+  --palette-candy-floss: #fcf2f6;
+  --palette-cotton-candy: #f3e0e8;
+  --palette-bubble-gum: #e9d1dd;
+}
+
+/* EPA category hues with muted fills and deeper marks for contrast. */
+:root {
+  --aqi-good: #dcead9;
+  --aqi-moderate: #f4ebcc;
+  --aqi-sensitive: #f3dfcc;
+  --aqi-unhealthy: #efd7d7;
+  --aqi-very-unhealthy: #e9dbea;
+  --aqi-hazardous: #e9d3da;
+  --aqi-mark-good: #228024;
+  --aqi-mark-moderate: #826600;
+  --aqi-mark-sensitive: #a84c00;
+  --aqi-mark-unhealthy: #bd0000;
+  --aqi-mark-very-unhealthy: #713178;
+  --aqi-mark-hazardous: #7e0023;
+  --aqi-mark-unknown: var(--ink-muted);
+  --aqi-ink-on-bright: #463c3f;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-background: var(--bg);
+  --color-foreground: var(--ink);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-line: var(--border);
+  --color-accent: var(--accent-mark);
+  --color-focus: var(--focus);
+  --font-sans: var(--font-body);
+  --font-heading: var(--font-display);
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+}

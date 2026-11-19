@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BarChart3, Bookmark, ChevronDown, CloudSun, Home, LockKeyhole, RefreshCw, Search, X } from "lucide-react";
+import { BarChart3, Bookmark, CloudSun, Home, LockKeyhole, RefreshCw, Search, X } from "lucide-react";
 import { cityCatalog } from "@/lib/catalog";
 import { useSavedCities } from "@/components/SavedCitiesProvider";
 
@@ -76,7 +76,11 @@ export function AppHeader() {
   return <>
   <header className="site-header">
     <div className="header-inner">
-      <Link className="brand" href="/" aria-label="Airwise home"><span className="brand-mark"><CloudSun size={23} aria-hidden="true" /></span><span>Airwise</span></Link>
+      <Link className="brand" href="/" aria-label="Airwise home" onNavigate={event => {
+        if (pathname !== "/") return;
+        event.preventDefault();
+        window.scrollTo({ top: 0 });
+      }}><span className="brand-mark"><CloudSun size={23} aria-hidden="true" /></span><span>Airwise</span></Link>
       <div className={`search-wrap${mobileSearch ? " mobile-search-open" : ""}`} ref={box}>
         <Search size={18} aria-hidden="true" className="search-icon" />
         <input role="combobox" aria-label="Search cities" aria-autocomplete="list" aria-expanded={open} aria-controls="city-search-results" aria-activedescendant={open && results[active] ? `city-search-${results[active].slug}` : undefined}
@@ -96,7 +100,6 @@ export function AppHeader() {
         <Link className={`nav-link saved-nav${pathname === "/saved" ? " active" : ""}`} href="/saved"><Bookmark size={17} aria-hidden="true" /><span>Saved</span><span className="saved-count" aria-label={`${saved.length} saved cities`}>{saved.length}</span></Link>
       </nav>
       {forceScope && <button className="force-record-trigger" onClick={() => { setForceOpen(true); setForcePassword(""); setForceMessage(""); }} aria-label={`Force recording for ${forceTitle}`} aria-haspopup="dialog"><RefreshCw size={16} aria-hidden="true" /><span>Record now</span></button>}
-      <span className="header-cloud" aria-hidden="true"><ChevronDown size={15} /></span>
     </div>
   </header>
   {forceOpen && forceScope && <div className="force-record-backdrop" onKeyDown={event => { if (event.key === "Escape") closeForceDialog(); }} onMouseDown={event => { if (event.target === event.currentTarget) closeForceDialog(); }}>
