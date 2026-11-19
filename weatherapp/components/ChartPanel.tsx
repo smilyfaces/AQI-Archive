@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type ReactNode } from "react";
-import { NUMERIC_METRICS, type MetricKey } from "@/lib/statistics";
+import { NUMERIC_METRICS, type MetricKey } from "@/lib/metrics";
 
 const chartTypes = {
   series: "Readings over time",

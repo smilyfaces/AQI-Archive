@@ -1,5 +1,7 @@
 import { max, mean, median, min, quantile, sampleStandardDeviation, sampleVariance } from "simple-statistics";
 import jStat from "jstat";
+import { NUMERIC_METRICS, type MetricKey } from "@/lib/metrics";
+export { NUMERIC_METRICS, type MetricKey } from "@/lib/metrics";
 import type { Reading } from "@/lib/data";
 
 export type AnalysisScope =
@@ -23,27 +25,21 @@ export type RankingCity = { id:string; slug?:string; name:string; state:string }
 export type CityAqiRank = { cityId:string; slug:string; name:string; state:string; n:number; mean:number|null; median:number|null; p95:number|null; above100Percent:number|null; eligible:boolean };
 export function rankCitiesByAqi(readings:Reading[],cities:RankingCity[],scope:AnalysisScope):InferentialResult<CityAqiRank[]> {
   const scoped=rowsForScope(readings,scope), allowedCities=scope.kind==="global"&&scope.cityIds?new Set(scope.cityIds):scope.kind==="cities"?new Set(scope.cityIds):null;
+  const byCity = new Map<string, number[]>();
+  for (const row of scoped) {
+    if (!row.city_id || !numeric(row.aqi)) continue;
+    const values = byCity.get(row.city_id) ?? [];
+    values.push(row.aqi);
+    byCity.set(row.city_id, values);
+  }
   const cityRows=cities.filter(city=>!allowedCities||allowedCities.has(city.id)).map(city=>{
-    const values=scoped.filter(row=>row.city_id===city.id&&numeric(row.aqi)).map(row=>row.aqi as number).sort((a,b)=>a-b),n=values.length;
+    const values=(byCity.get(city.id) ?? []).sort((a,b)=>a-b),n=values.length;
     return {cityId:city.id,slug:city.slug??city.id,name:city.name,state:city.state,n,mean:n?mean(values):null,median:n?median(values):null,p95:n?quantile(values,.95):null,above100Percent:n?100*values.filter(value=>value>100).length/n:null,eligible:n>=MINIMUMS.cityRanking};
   });
   const n=cityRows.reduce((sum,city)=>sum+city.n,0),qualifying=cityRows.filter(city=>city.eligible).sort((a,b)=>(a.mean??Infinity)-(b.mean??Infinity));
   return {...meta(n,"city-level AQI rankings (equal city unit; city-level summaries)",scope),status:"ok",required:MINIMUMS.cityRanking,value:[...qualifying,...cityRows.filter(city=>!city.eligible)]};
 }
 
-export const NUMERIC_METRICS = [
-  { key: "aqi", label: "AQI", unit: "" },
-  { key: "pm25", label: "PM2.5", unit: "µg/m³" }, { key: "pm10", label: "PM10", unit: "µg/m³" },
-  { key: "ozone", label: "Ozone", unit: "µg/m³" }, { key: "no2", label: "NO2", unit: "µg/m³" },
-  { key: "so2", label: "SO2", unit: "µg/m³" }, { key: "co", label: "CO", unit: "mg/m³" },
-  { key: "temperature_c", label: "Temperature", unit: "°C" }, {key:"dewpoint_c",label:"Dewpoint",unit:"°C"}, { key: "relative_humidity", label: "Relative humidity", unit: "%" },
-  { key: "cloud_coverage_pct", label: "Cloud coverage", unit: "%" }, { key: "cloud_coverage_eighths", label: "Cloud coverage", unit: "eighths (0–8)" }, { key: "precipitation_last_hour_mm", label: "Precipitation (1 h)", unit: "mm" },
-  {key:"precipitation_3h_mm",label:"Precipitation (3 h)",unit:"mm"},{key:"precipitation_6h_mm",label:"Precipitation (6 h)",unit:"mm"},
-  {key:"wind_speed_ms",label:"Wind speed",unit:"m/s"},{key:"wind_direction_deg",label:"Wind direction",unit:"°"},{key:"wind_gust_ms",label:"Wind gust",unit:"m/s"},
-  {key:"barometric_pressure_pa",label:"Barometric pressure",unit:"Pa"},{key:"sea_level_pressure_pa",label:"Sea-level pressure",unit:"Pa"},{key:"visibility_m",label:"Visibility",unit:"m"},
-  {key:"heat_index_c",label:"Heat index",unit:"°C"},{key:"wind_chill_c",label:"Wind chill",unit:"°C"},
-] as const;
-export type MetricKey = typeof NUMERIC_METRICS[number]["key"];
 export type MetricSummary = { n: number; mean: number | null; median: number | null; min: number | null; max: number | null; sd: number | null; variance: number | null; q1:number|null; q3:number|null; iqr: number | null; p05: number | null; p95: number | null; mode: number | null };
 export const numeric = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 export const cleanValues = (values: Array<number | null | undefined>) => values.filter(numeric);
@@ -54,13 +50,19 @@ export function summarize(values: Array<number | null | undefined>): MetricSumma
   const sorted = [...clean].sort((a,b)=>a-b);
   const distinctCounts = new Map<number,number>();
   for (const value of sorted) distinctCounts.set(value, (distinctCounts.get(value) ?? 0) + 1);
-  const greatestFrequency = Math.max(...distinctCounts.values());
-  const modes = [...distinctCounts].filter(([,count])=>count===greatestFrequency).map(([value])=>value);
+  let mode = sorted[0];
+  let greatestFrequency = 0;
+  for (const [value, count] of distinctCounts) {
+    if (count > greatestFrequency) {
+      mode = value;
+      greatestFrequency = count;
+    }
+  }
   return {
     n: clean.length, mean: mean(clean), median: median(sorted), min: min(clean), max: max(clean),
     sd: clean.length > 1 ? sampleStandardDeviation(clean) : null,
     variance: clean.length > 1 ? sampleVariance(clean) : null,
-    q1:quantile(sorted,.25),q3:quantile(sorted,.75),iqr: quantile(sorted,.75)-quantile(sorted,.25), p05: quantile(sorted,.05), p95: quantile(sorted,.95), mode: Math.min(...modes),
+    q1:quantile(sorted,.25),q3:quantile(sorted,.75),iqr: quantile(sorted,.75)-quantile(sorted,.25), p05: quantile(sorted,.05), p95: quantile(sorted,.95), mode,
   };
 }
 
@@ -112,7 +114,10 @@ export function oneWayAnova(valuesByGroup: Array<Array<number|null|undefined>>, 
   if(n<minimumN || groups.length<2) return {n,groups:groups.length,fStatistic:null,pValue:null,suppressed:true};
   const all=groups.flat(); const grand=mean(all);
   const between=groups.reduce((sum,group)=>sum+group.length*(mean(group)-grand)**2,0);
-  const within=groups.reduce((sum,group)=>sum+group.reduce((part,value)=>part+(value-mean(group))**2,0),0);
+  const within = groups.reduce((sum, group) => {
+    const groupMean = mean(group);
+    return sum + group.reduce((part, value) => part + (value - groupMean) ** 2, 0);
+  }, 0);
   const df1=groups.length-1, df2=n-groups.length;
   if(within===0 || df2<=0) return {n,groups:groups.length,fStatistic:within===0&&between>0?Infinity:null,pValue:within===0&&between>0?0:null,suppressed:false};
   const f=(between/df1)/(within/df2);
@@ -611,7 +616,7 @@ export function deriveFeatures(input:Reading[],cities:CityContext[],scope:Analys
     for(let index=0;index<ordered.length;index++){
       const row=ordered[index],timestamp=timestamps[index],part=localParts(row.recorded_at,city.timezone),hour=Number(part.hour),month=Number(part.month),dayOfYear=Number(part.day),localDate=new Date(`${part.year}-${String(month).padStart(2,"0")}-${String(dayOfYear).padStart(2,"0")}T12:00:00Z`);
       const season=month<=2||month===12?"Winter":month<=5?"Spring":month<=8?"Summer":"Autumn";
-      const precipFlag=row.precipitation_type!==null?row.precipitation_type.toLowerCase()!=="none":numeric(row.precipitation_last_hour_mm)?row.precipitation_last_hour_mm>0:null;
+      const precipFlag=row.precipitation_type!=null?row.precipitation_type.toLowerCase()!=="none":numeric(row.precipitation_last_hour_mm)?row.precipitation_last_hour_mm>0:null;
       if(precipFlag)lastRain=timestamp;
       if(numeric(row.precipitation_last_hour_mm)){rainSum+=row.precipitation_last_hour_mm;rainHours++;}
       while(left24<=index&&timestamp-timestamps[left24]>=24*3600000){const expired=ordered[left24].precipitation_last_hour_mm;if(numeric(expired)){rainSum-=expired;rainHours--;}left24++;}

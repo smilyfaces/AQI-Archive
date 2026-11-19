@@ -104,8 +104,7 @@ export async function getCities(): Promise<{ cities: City[]; error: string | nul
   }), error: null, localFallback: false };
 }
 
-export async function getAllReadings(duration = Infinity): Promise<{ readings: Reading[]; cities:AnalysisCity[]; error: string | null; localFallback: boolean; asOf:number }> {
-  const asOf = Date.now();
+export async function getAllReadings(duration = Infinity, asOf = Date.now()): Promise<{ readings: Reading[]; cities:AnalysisCity[]; error: string | null; localFallback: boolean; asOf:number }> {
   const since = asOf - duration;
   const db = publicDb();
   const manualCityContexts:AnalysisCity[] = [

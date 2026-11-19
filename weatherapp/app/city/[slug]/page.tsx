@@ -5,6 +5,8 @@ import { Archive, Cloud, CloudRain, CloudSun, Droplets, Gauge, Wind } from "luci
 import { AqiRing } from "@/components/AqiRing";
 import { CityInsights } from "@/components/CityInsights";
 import { SaveButton } from "@/components/SaveButton";
+import { calculateInsights, cityInsightsDataset } from "@/lib/insights-analysis";
+import { rememberInsightsDataset } from "@/lib/insights-data";
 import { getCity } from "@/lib/data";
 
 export async function generateMetadata({ params }: { params: Promise<{slug:string}> }) {
@@ -27,7 +29,11 @@ export default async function CityPage({params}:{params:Promise<{slug:string}>})
   const primary=latest?.primary_pollutant??null;
   const concentration=primary==="PM2.5"?latest?.pm25:primary==="PM10"?latest?.pm10:primary==="Ozone"?latest?.ozone:primary==="NO2"?latest?.no2:primary==="SO2"?latest?.so2:primary==="CO"?latest?.co:null;
   const weatherIcon=latest?.text_description?.toLowerCase().includes("rain")?<CloudRain size={18}/>:latest?.text_description?.toLowerCase().includes("cloud")?<CloudSun size={18}/>:<Cloud size={18}/>;
-  const timezone=city.timezone??(city.slug==="oakland-ca"?"America/Los_Angeles":city.slug==="lamont-ok"?"America/Chicago":"America/New_York");
+  const source = { slug, asOf };
+  const dataset = cityInsightsDataset(city, readings, asOf);
+  const { timezone } = dataset;
+  rememberInsightsDataset(source, dataset);
+  const initialReport = calculateInsights(dataset, { period: "all", includeManual: false, sampleSize: null, sampleSeed: 0 });
 
   return <main id="main-content" className="page-main city-page">
     <div className="page-container">
@@ -49,7 +55,7 @@ export default async function CityPage({params}:{params:Promise<{slug:string}>})
           <Condition icon={<Wind size={18}/>} label="Wind" value={latest?.wind_speed_ms===null||latest?.wind_speed_ms===undefined?"N/A":`${formatNumber(latest.wind_speed_ms*2.23694)} mph`}/>
         </div><div className="city-source-row"><span><Gauge size={15}/> Data source</span><p>{city.data_source_note??(latest?.weather_station_id?`NWS station ${latest.weather_station_id}`:"Nearby reporting and weather stations")}{latest?.aqi_source_site?` · AQI: ${latest.aqi_source_site}`:""}</p></div></div>
       </section>
-      <CityInsights readings={readings.map(row=>({...row,city_id:row.city_id??city.id??city.slug}))} timezone={timezone} now={asOf} scope={{kind:"city",cityId:city.id??city.slug}} cities={city.lat!==undefined&&city.lon!==undefined?[{id:city.id??city.slug,slug:city.slug,name:city.name,state:city.state,timezone,lat:city.lat,lon:city.lon,region:city.region,climateType:city.climate_type,sizeBand:city.size_band,population:city.population}]:[]}/>
+      <CityInsights source={source} timezone={timezone} initialReport={initialReport}/>
     </div>
   </main>;
 }
