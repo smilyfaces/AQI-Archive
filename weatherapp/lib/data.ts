@@ -104,33 +104,40 @@ export async function getCities(): Promise<{ cities: City[]; error: string | nul
   }), error: null, localFallback: false };
 }
 
-export async function getAllReadings(): Promise<{ readings: Reading[]; cities:AnalysisCity[]; error: string | null; localFallback: boolean; asOf:number }> {
+export async function getAllReadings(duration = Infinity): Promise<{ readings: Reading[]; cities:AnalysisCity[]; error: string | null; localFallback: boolean; asOf:number }> {
+  const asOf = Date.now();
+  const since = asOf - duration;
   const db = publicDb();
   const manualCityContexts:AnalysisCity[] = [
     {id:"columbia-sc",slug:"columbia-sc",name:"Columbia",state:"SC",timezone:"America/New_York",lat:34.0007,lon:-81.0348,region:"Southeast",climateType:null,sizeBand:null,population:null},
     {id:"oakland-ca",slug:"oakland-ca",name:"Oakland",state:"CA",timezone:"America/Los_Angeles",lat:37.8044,lon:-122.2712,region:"Pacific",climateType:null,sizeBand:null,population:null},
     {id:"lamont-ok",slug:"lamont-ok",name:"Lamont",state:"OK",timezone:"America/Chicago",lat:36.6778,lon:-97.4837,region:"Southwest",climateType:null,sizeBand:null,population:null},
   ];
-  const manualReadings=()=>cityCatalog.flatMap(city=>getManualReadings(city.slug).map(row=>({...row,city_id:city.slug})));
-  if (!db) return { readings: manualReadings(), cities:manualCityContexts, error: null, localFallback: true, asOf:Date.now() };
+  const manualReadings=()=>cityCatalog.flatMap(city=>getManualReadings(city.slug).map(row=>({...row,city_id:city.slug}))).filter(row=>{
+    const timestamp = Date.parse(row.recorded_at);
+    return timestamp >= since && timestamp <= asOf;
+  });
+  if (!db) return { readings: manualReadings(), cities:manualCityContexts, error: null, localFallback: true, asOf };
 
   const readings: Reading[] = [];
   const pageSize = 1000;
   const metadataCityResult=await db.from("cities").select("id,slug,name,state,timezone,lat,lon,region,climate_type,population,size_band").eq("is_active",true);
   const cityResult=metadataColumnsMissing(metadataCityResult.error)?await db.from("cities").select("id,slug,name,state,timezone,lat,lon").eq("is_active",true):metadataCityResult;
   const {data:cityRows,error:cityError}=cityResult;
-  if(cityError?.code==="PGRST205")return {readings:manualReadings(),cities:manualCityContexts,error:null,localFallback:true,asOf:Date.now()};
-  if(cityError)return {readings:[],cities:[],error:cityError.message,localFallback:false,asOf:Date.now()};
+  if(cityError?.code==="PGRST205")return {readings:manualReadings(),cities:manualCityContexts,error:null,localFallback:true,asOf};
+  if(cityError)return {readings:[],cities:[],error:cityError.message,localFallback:false,asOf};
   const cities:AnalysisCity[]=((cityRows??[]) as CityMetadataRow[]).map((city)=>({id:city.id,slug:city.slug,name:city.name,state:city.state,timezone:city.timezone,lat:city.lat,lon:city.lon,region:city.region??null,climateType:city.climate_type??null,sizeBand:city.size_band??null,population:city.population??null}));
   for (let offset = 0; ; offset += pageSize) {
-    const { data, error } = await db.from("readings").select("*").order("recorded_at", { ascending: true }).range(offset, offset + pageSize - 1);
-    if (error?.code === "PGRST205") return { readings: manualReadings(), cities:manualCityContexts, error: null, localFallback: true, asOf:Date.now() };
-    if (error) return { readings: [], cities:[], error: error.message, localFallback: false, asOf:Date.now() };
+    let query = db.from("readings").select("*").lte("recorded_at", new Date(asOf).toISOString());
+    if (Number.isFinite(since)) query = query.gte("recorded_at", new Date(since).toISOString());
+    const { data, error } = await query.order("recorded_at").order("id").range(offset, offset + pageSize - 1);
+    if (error?.code === "PGRST205") return { readings: manualReadings(), cities:manualCityContexts, error: null, localFallback: true, asOf };
+    if (error) return { readings: [], cities:[], error: error.message, localFallback: false, asOf };
     const batch = (data ?? []) as Reading[];
     readings.push(...batch);
     if (batch.length < pageSize) break;
   }
-  return { readings, cities, error: null, localFallback: false, asOf:Date.now() };
+  return { readings, cities, error: null, localFallback: false, asOf };
 }
 
 export async function getCity(slug: string): Promise<{ city: City | null; readings: Reading[]; error: string | null; localFallback: boolean; asOf:number }> {

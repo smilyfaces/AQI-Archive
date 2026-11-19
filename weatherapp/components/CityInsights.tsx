@@ -1,7 +1,9 @@
 "use client";
 
 import { formatNumber as fmt, formatPValue } from "@/lib/format-number";
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { analysisPeriods as periodOptions, type AnalysisPeriod } from "@/lib/analysis-periods";
 import { format } from "date-fns";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Scatter, ScatterChart, XAxis, YAxis } from "recharts";
 import { ChartTooltip } from "@/components/ChartTooltip";
@@ -10,7 +12,6 @@ import { AnalysisNavigation } from "@/components/AnalysisNavigation";
 import type { Reading } from "@/lib/data";
 import { binnedGrid, compareCondition, correlation, deriveFeatures, groupedAverages, metricValue, multipleWeatherRegression, NUMERIC_METRICS, oneWayAnova, rollingAverages, summarize, timeTrend, WEATHER_SCENARIOS, type AnalysisScope, type CityContext, type MetricKey } from "@/lib/statistics";
 
-const periodOptions = [{key:"24h",label:"24 hours",duration:24*60*60*1000},{key:"7d",label:"7 days",duration:7*24*60*60*1000},{key:"30d",label:"30 days",duration:30*24*60*60*1000},{key:"90d",label:"90 days",duration:90*24*60*60*1000},{key:"all",label:"All time",duration:Infinity}] as const;
 const metricLabel = (key:string) => NUMERIC_METRICS.find(item=>item.key===key)?.label ?? key;
 const getLocalDate=(value:string,timezone:string)=>new Intl.DateTimeFormat("en-US",{timeZone:timezone,month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(new Date(value));
 const sampleSizes = [100, 500, 1000, 5000] as const;
@@ -37,9 +38,23 @@ const formatChartDate = (value: unknown) => {
   return Number.isFinite(timestamp) ? format(new Date(timestamp), "MMM d") : "";
 };
 
-export function CityInsights({ readings, timezone, now, title = "Statistics and archive insights", showSampleControl = false, scope, cities = [] }: { readings: Reading[]; timezone: string; now: number; title?: string; showSampleControl?: boolean; scope?:AnalysisScope; cities?:CityContext[] }) {
+export function CityInsights({ readings, timezone, now, title = "Statistics and archive insights", showSampleControl = false, archivePeriod, scope, cities = [] }: { readings: Reading[]; timezone: string; now: number; title?: string; showSampleControl?: boolean; archivePeriod?: AnalysisPeriod; scope?:AnalysisScope; cities?:CityContext[] }) {
   const sectionPrefix = useId();
-  const [period,setPeriod]=useState<(typeof periodOptions)[number]["key"]>("all");
+  const [localPeriod, setLocalPeriod] = useState<AnalysisPeriod>("all");
+  const period = archivePeriod ?? localPeriod;
+  const router = useRouter();
+  const [loadingPeriod, startPeriodChange] = useTransition();
+
+  function changePeriod(next: AnalysisPeriod) {
+    if (!archivePeriod) {
+      setLocalPeriod(next);
+      return;
+    }
+    if (next === period) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("period", next);
+    startPeriodChange(() => router.replace(url.pathname + url.search + url.hash, { scroll: false }));
+  }
   const [sampleSize,setSampleSize]=useState<"all"|`${number}`>("all");
   const [sampleSeed,setSampleSeed]=useState(0);
   const [includeManual,setIncludeManual]=useState(false);
@@ -140,8 +155,9 @@ export function CityInsights({ readings, timezone, now, title = "Statistics and 
   }
 
   return <div className="insights-content">
-    <div className="insights-toolbar"><div><h2>{title}</h2><p>{showSampleControl&&sampleSize!=="all"?`Random sample of ${visible.length} from ${periodReadings.length} records`:`${visible.length} records`} in {selectedPeriod.label.toLowerCase()} · {includeManual?"automated and manual readings":"automated readings only"} · dates shown in {timezone}</p><p className="analysis-scope">{activeScope.kind === "city" ? "City" : activeScope.kind === "global" ? "All cities" : "Saved cities"} · n = {visible.length.toLocaleString()}</p></div><div className="insights-toolbar-controls"><label className="analysis-mobile-period sample-size-control"><span>Time range</span><select value={period} onChange={event=>setPeriod(event.target.value as typeof period)}>{periodOptions.map(option=><option key={option.key} value={option.key}>{option.label}</option>)}</select></label><div className="segmented-control" role="group" aria-label="Statistics time range">{periodOptions.map(option=><button key={option.key} className={period===option.key?"selected":""} aria-pressed={period===option.key} onClick={()=>setPeriod(option.key)}>{option.label}</button>)}</div><label className="sample-size-control"><span>Dataset</span><select value={includeManual?"all":"automated"} onChange={event=>setIncludeManual(event.target.value==="all")}><option value="automated">Automated</option><option value="all">Include manual</option></select></label>{showSampleControl&&<label className="sample-size-control"><span>Sample size</span><select value={sampleSize} onChange={event=>{const value=event.target.value as typeof sampleSize;setSampleSize(value);setSampleSeed(Math.floor(Math.random()*4294967296));}}><option value="all">All readings</option>{sampleSizes.map(size=><option key={size} value={String(size)}>{size.toLocaleString()} readings</option>)}</select></label>}</div></div>
+    <div className="insights-toolbar"><div><h2>{title}</h2><p>{showSampleControl&&sampleSize!=="all"?`Random sample of ${visible.length} from ${periodReadings.length} records`:`${visible.length} records`} in {selectedPeriod.label.toLowerCase()} · {includeManual?"automated and manual readings":"automated readings only"} · dates shown in {timezone}</p><p className="analysis-scope">{activeScope.kind === "city" ? "City" : activeScope.kind === "global" ? "All cities" : "Saved cities"} · n = {visible.length.toLocaleString()}</p></div><div className="insights-toolbar-controls"><label className="analysis-mobile-period sample-size-control"><span>Time range</span><select value={period} disabled={loadingPeriod} onChange={event=>changePeriod(event.target.value as AnalysisPeriod)}>{periodOptions.map(option=><option key={option.key} value={option.key}>{option.label}</option>)}</select></label><div className="segmented-control" role="group" aria-label="Statistics time range">{periodOptions.map(option=><button key={option.key} className={period===option.key?"selected":""} aria-pressed={period===option.key} disabled={loadingPeriod} onClick={()=>changePeriod(option.key)}>{option.label}</button>)}</div><label className="sample-size-control"><span>Dataset</span><select value={includeManual?"all":"automated"} onChange={event=>setIncludeManual(event.target.value==="all")}><option value="automated">Automated</option><option value="all">Include manual</option></select></label>{showSampleControl&&<label className="sample-size-control"><span>Sample size</span><select value={sampleSize} onChange={event=>{const value=event.target.value as typeof sampleSize;setSampleSize(value);setSampleSeed(Math.floor(Math.random()*4294967296));}}><option value="all">All readings</option>{sampleSizes.map(size=><option key={size} value={String(size)}>{size.toLocaleString()} readings</option>)}</select></label>}</div></div>
 
+    {loadingPeriod && <p className="plain-caption" role="status">Loading readings for the selected range...</p>}
     <div className="analysis-layout"><AnalysisNavigation prefix={sectionPrefix} hasModels={!!model} /><div className="analysis-body">
     <div className="analysis-section" data-analysis-section="overview" id={sectionPrefix+"-overview"}>
     <section className="insight-section" aria-labelledby={sectionPrefix+"-summary-heading"}><div className="insight-heading"><h3 id={sectionPrefix+"-summary-heading"}>Summary statistics</h3><p>Each row uses only values recorded for that metric; missing values are excluded.</p></div>
